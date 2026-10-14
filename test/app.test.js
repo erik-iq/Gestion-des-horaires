@@ -11,6 +11,8 @@ async function launch() {
   proc = spawn(process.execPath, ["server.js"], {
     env: {
       ...process.env,
+      BOOTSTRAP_ADMIN_EMAIL: "",
+      BOOTSTRAP_ADMIN_PASSWORD: "",
       PORT: "0",
       HOST: "127.0.0.1",
       DB_PATH: path.join(tmp, "test.sqlite"),

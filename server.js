@@ -1,12 +1,43 @@
 import http from "node:http";
 import { DatabaseSync } from "node:sqlite";
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
+import {
+  randomBytes,
+  scryptSync,
+  timingSafeEqual,
+  createHash,
+} from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-const root = path.dirname(fileURLToPath(import.meta.url));
+import { getAsset, isSea } from "node:sea";
+import { spawn } from "node:child_process";
+import os from "node:os";
+const packaged = isSea();
+const desktop = packaged || process.env.TEMPO_DESKTOP === "true";
+const root = packaged
+  ? path.dirname(process.execPath)
+  : path.dirname(fileURLToPath(import.meta.url));
+const desktopData =
+  process.platform === "win32"
+    ? path.join(
+        process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
+        "Tempo",
+      )
+    : path.join(os.homedir(), ".local", "share", "Tempo");
 const location =
-  process.env.DB_PATH || path.join(root, "data", "horaires.sqlite");
+  process.env.DB_PATH ||
+  path.join(desktop ? desktopData : path.join(root, "data"), "horaires.sqlite");
+const instanceId = createHash("sha256")
+  .update(path.resolve(location))
+  .digest("hex");
+function log(message, error = false) {
+  // Les exécutables graphiques Windows n'ont pas forcément de console.
+  try {
+    error ? console.error(message) : console.log(message);
+  } catch {
+    /* Pas de terminal attaché. */
+  }
+}
 mkdirSync(path.dirname(location), { recursive: true });
 const db = new DatabaseSync(location);
 db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;
@@ -60,6 +91,32 @@ function credentials(b) {
   )
     fail("Le mot de passe doit contenir entre 10 et 128 caractères.");
   return { name, email, password: hash(b.password) };
+}
+
+// L'hébergement crée le premier administrateur avant d'ouvrir le serveur.
+// Un redéploiement ne remplace jamais les comptes déjà enregistrés.
+if (!db.prepare("SELECT id FROM users LIMIT 1").get()) {
+  const email = process.env.BOOTSTRAP_ADMIN_EMAIL;
+  const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+  if (email || password) {
+    try {
+      const c = credentials({
+        name: process.env.BOOTSTRAP_ADMIN_NAME || "Administrateur",
+        email,
+        password,
+      });
+      db.prepare(
+        "INSERT INTO users(name,email,password,role) VALUES(?,?,?,'admin')",
+      ).run(c.name, c.email, c.password);
+    } catch {
+      log(
+        "Création administrateur impossible : vérifiez BOOTSTRAP_ADMIN_EMAIL et BOOTSTRAP_ADMIN_PASSWORD (10 à 128 caractères).",
+        true,
+      );
+      db.close();
+      process.exit(1);
+    }
+  }
 }
 function number(v, min, max) {
   if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max)
@@ -138,6 +195,8 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost"),
       p = url.pathname,
       method = req.method;
+    if (desktop && req.headers.host !== `127.0.0.1:${server.address().port}`)
+      fail("Adresse locale non autorisée.", 403);
     if (
       !["GET", "HEAD"].includes(method) &&
       req.headers.origin &&
@@ -151,6 +210,7 @@ const server = http.createServer(async (req, res) => {
         "/": "index.html",
         "/app.js": "app.js",
         "/style.css": "style.css",
+        ...(packaged ? { "/licences.txt": "licenses.txt" } : {}),
       };
       if (!files[p]) fail("Page introuvable.", 404);
       const f = files[p];
@@ -159,15 +219,23 @@ const server = http.createServer(async (req, res) => {
           ? "text/javascript; charset=utf-8"
           : f.endsWith(".css")
             ? "text/css; charset=utf-8"
-            : "text/html; charset=utf-8",
+            : f.endsWith(".txt")
+              ? "text/plain; charset=utf-8"
+              : "text/html; charset=utf-8",
       });
       return res.end(
-        method === "HEAD" ? "" : readFileSync(path.join(root, "public", f)),
+        method === "HEAD"
+          ? ""
+          : packaged
+            ? Buffer.from(getAsset(f))
+            : readFileSync(path.join(root, "public", f)),
       );
     }
     if (p === "/api/status" && method === "GET")
       return send(res, 200, {
         setupRequired: !db.prepare("SELECT id FROM users LIMIT 1").get(),
+        desktop,
+        ...(desktop ? { instanceId } : {}),
       });
     if (p === "/api/setup" && method === "POST") {
       const b = await body(req);
@@ -220,6 +288,22 @@ const server = http.createServer(async (req, res) => {
     }
     const u = db.prepare("SELECT * FROM users WHERE id=?").get(s.id);
     if (!u) fail("Veuillez vous connecter.", 401);
+    if (p === "/api/desktop/quit" && method === "POST") {
+      if (!desktop) fail("Route introuvable.", 404);
+      admin(u);
+      send(res, 200, { ok: true });
+      setTimeout(() => {
+        server.close(() => {
+          db.close();
+          process.exit(0);
+        });
+        server.closeIdleConnections();
+        setTimeout(() => {
+          server.closeAllConnections();
+        }, 1000).unref();
+      }, 150);
+      return;
+    }
     if (p === "/api/logout" && method === "POST") {
       sessions.delete(token);
       res.setHeader(
@@ -250,6 +334,7 @@ const server = http.createServer(async (req, res) => {
       if (!/^\d{4}$/.test(year)) fail("Année invalide.");
       const users = db.prepare("SELECT * FROM users ORDER BY name").all();
       return send(res, 200, {
+        desktop,
         user: safeUser(u),
         today: today(),
         users: users.map((x) =>
@@ -441,14 +526,91 @@ const server = http.createServer(async (req, res) => {
     }
     fail("Route introuvable.", 404);
   } catch (e) {
-    if (!e.status) console.error(e);
+    if (!e.status) log(e, true);
     send(res, e.status || 500, {
       error: e.status ? e.message : "Erreur interne du serveur.",
     });
   }
 });
-server.listen(
-  Number(process.env.PORT || 3000),
-  process.env.HOST || "0.0.0.0",
-  () => console.log(`Horaires prêt sur le port ${server.address().port}`),
-);
+function openInterface(port) {
+  if (
+    process.env.TEMPO_NO_OPEN === "true" ||
+    process.argv.includes("--no-open")
+  )
+    return;
+  const url = `http://127.0.0.1:${port}`;
+  const command =
+    process.platform === "win32"
+      ? "rundll32.exe"
+      : process.platform === "darwin"
+        ? "open"
+        : "xdg-open";
+  const args =
+    process.platform === "win32" ? ["url.dll,FileProtocolHandler", url] : [url];
+  const child = spawn(command, args, {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  child.on("error", () =>
+    log("Impossible d'ouvrir automatiquement le navigateur.", true),
+  );
+  child.unref();
+}
+const port = Number(process.env.PORT || (desktop ? 37129 : 3000));
+server.on("error", async (error) => {
+  if (desktop && error.code === "EADDRINUSE") {
+    try {
+      // Contact direct du service local, sans dépendre des paramètres proxy
+      // ou de l'initialisation de fetch dans un exécutable graphique.
+      const existing = await new Promise((resolve, reject) => {
+        const request = http.get(
+          `http://127.0.0.1:${port}/api/status`,
+          { agent: false, timeout: 3000 },
+          (response) => {
+            let body = "";
+            response.on("data", (chunk) => {
+              body += chunk;
+              if (body.length > 10000)
+                request.destroy(new Error("Réponse locale trop volumineuse."));
+            });
+            response.on("end", () => {
+              try {
+                resolve(response.statusCode === 200 ? JSON.parse(body) : null);
+              } catch (error) {
+                reject(error);
+              }
+            });
+            response.on("error", reject);
+          },
+        );
+        request.on("timeout", () =>
+          request.destroy(new Error("Service local indisponible.")),
+        );
+        request.on("error", reject);
+      });
+      if (existing?.desktop && existing.instanceId === instanceId) {
+        openInterface(port);
+        db.close();
+        process.exit(0);
+      }
+    } catch {
+      /* Le port appartient à une autre application. */
+    }
+    server.listen(0, "127.0.0.1");
+    return;
+  }
+  log("Impossible de démarrer Tempo : " + error.code, true);
+  db.close();
+  process.exit(1);
+});
+server.on("listening", () => {
+  log(`Horaires prêt sur le port ${server.address().port}`);
+  if (process.env.TEMPO_READY_FILE)
+    writeFileSync(
+      process.env.TEMPO_READY_FILE,
+      JSON.stringify({ port: server.address().port }),
+    );
+  if (desktop) openInterface(server.address().port);
+});
+server.listen(port, desktop ? "127.0.0.1" : process.env.HOST || "0.0.0.0");

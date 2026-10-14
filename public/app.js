@@ -144,7 +144,7 @@ function stat(label, value, unit, sub, k, highlight = false) {
   return `<div class="stat ${highlight ? "highlight" : ""}"><span class="stat-icon">${icon(k)}</span><p class="label">${label}</p><div class="value">${value}<span class="unit">${unit}</span></div><p class="sub">${sub}</p></div>`;
 }
 function render() {
-  app.innerHTML = `<div class="shell"><aside class="sidebar">${brand()}<div class="nav-label">Espace personnel</div><nav class="nav" aria-label="Navigation principale">${navItem("dashboard", "Vue d’ensemble", "grid")}${navItem("hours", "Mes horaires", "clock")}${navItem("leaves", "Vacances", "sun")}${navItem("attendance", "Présence", "people")}${navItem("reports", "Rapports mensuels", "report")}${state.user.role === "admin" ? `<div class="nav-label">Administration</div>${navItem("users", "Utilisateurs", "people")}` : ""}</nav><div class="sidebar-bottom">${person(state.user, state.user.role === "admin" ? "Administrateur" : "Collaborateur")}<button class="logout" data-action="logout">${icon("logout")}Se déconnecter</button></div></aside><main class="main"><header class="topbar"><div class="breadcrumb"><button class="mobile-menu" data-action="menu" aria-label="Ouvrir le menu">${icon("menu")}</button><span>Mon espace /</span><b>${pageTitles[page]}</b></div><div class="topbar-right"><button class="refresh-button" data-action="refresh" title="Actualiser les données" aria-label="Actualiser les données">${icon("arrow")}</button><span class="date-chip">${icon("calendar")}${fmt(state.today, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</span><button class="avatar account-button" data-action="account" aria-label="Mon compte : ${esc(state.user.name)}" title="Mon compte">${esc(initials(state.user.name))}</button></div></header><div class="content">${{ dashboard: dashboard, hours: hours, leaves: leaves, attendance: attendance, reports: reports, users: users }[page]()}<footer class="footer"><span>Tempo · Le temps, simplement.</span><span>Données privées · Espace ${state.user.role === "admin" ? "administrateur" : "collaborateur"}</span></footer></div></main></div>`;
+  app.innerHTML = `<div class="shell"><aside class="sidebar">${brand()}<div class="nav-label">Espace personnel</div><nav class="nav" aria-label="Navigation principale">${navItem("dashboard", "Vue d’ensemble", "grid")}${navItem("hours", "Mes horaires", "clock")}${navItem("leaves", "Vacances", "sun")}${navItem("attendance", "Présence", "people")}${navItem("reports", "Rapports mensuels", "report")}${state.user.role === "admin" ? `<div class="nav-label">Administration</div>${navItem("users", "Utilisateurs", "people")}` : ""}</nav><div class="sidebar-bottom">${person(state.user, state.user.role === "admin" ? "Administrateur" : "Collaborateur")}<button class="logout" data-action="logout">${icon("logout")}Se déconnecter</button></div></aside><main class="main"><header class="topbar"><div class="breadcrumb"><button class="mobile-menu" data-action="menu" aria-label="Ouvrir le menu">${icon("menu")}</button><span>Mon espace /</span><b>${pageTitles[page]}</b></div><div class="topbar-right">${state.desktop && state.user.role === "admin" ? `<button class="refresh-button" data-action="quit" title="Quitter Tempo" aria-label="Quitter Tempo">${icon("logout")}</button>` : ""}<button class="refresh-button" data-action="refresh" title="Actualiser les données" aria-label="Actualiser les données">${icon("arrow")}</button><span class="date-chip">${icon("calendar")}${fmt(state.today, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</span><button class="avatar account-button" data-action="account" aria-label="Mon compte : ${esc(state.user.name)}" title="Mon compte">${esc(initials(state.user.name))}</button></div></header><div class="content">${{ dashboard: dashboard, hours: hours, leaves: leaves, attendance: attendance, reports: reports, users: users }[page]()}<footer class="footer"><span>Tempo · Le temps, simplement.${state.desktop ? " · Données locales" : ""}</span><span>Données privées · Espace ${state.user.role === "admin" ? "administrateur" : "collaborateur"}</span></footer></div></main></div>`;
 }
 function myEntries() {
   return state.entries.filter((e) => e.user_id === state.user.id);
@@ -305,7 +305,14 @@ function users() {
     `<section class="panel"><div class="panel-head"><div><h2>Les membres de l’équipe</h2><p>${state.users.length} compte${state.users.length > 1 ? "s" : ""} · Les collaborateurs voient uniquement leurs heures et leurs demandes.</p></div></div><div class="table-wrap"><table><thead><tr><th>Collaborateur</th><th>E-mail</th><th>Rôle</th><th>Quota / an</th><th>Solde actuel</th><th>Objectif / jour</th><th>Actions</th></tr></thead><tbody>${state.users.map((u) => `<tr><td>${person(u, u.id === state.user.id ? "Vous" : "")}</td><td>${esc(u.email)}</td><td><span class="badge ${u.role === "admin" ? "approved" : ""}">${u.role === "admin" ? "Administrateur" : "Collaborateur"}</span></td><td>${decimal(u.allowance)} jours</td><td><strong>${decimal(u.vacation_balance.remaining)} jours</strong><br><small class="week-days">${decimal(u.vacation_balance.used)} approuvés · ${state.today.slice(0, 4)}</small></td><td>${decimal(u.daily_hours)}h</td><td><button class="link-button" data-action="user" data-id="${u.id}">Gérer le compte →</button></td></tr>`).join("")}</tbody></table></div></section><p class="helper">Un administrateur peut consulter les rapports de l’équipe, traiter les vacances et créer les comptes. Le quota annuel s’applique à chaque année, sans report automatique. Les mots de passe ne sont jamais affichés.</p>`
   );
 }
-function dialog(title, subtitle, form, submit, handler) {
+function dialog(
+  title,
+  subtitle,
+  form,
+  submit,
+  handler,
+  closeApplication = false,
+) {
   modal.innerHTML = `<div class="modal-head"><div><h2>${title}</h2><p>${subtitle}</p></div><button class="close" data-action="close" aria-label="Fermer">×</button></div><form><div class="error" role="alert"></div>${form}<div class="modal-actions"><button class="btn secondary" type="button" data-action="close">Annuler</button><button class="btn" type="submit">${submit}</button></div></form>`;
   modal.showModal();
   modal.querySelector("form").addEventListener("submit", async (e) => {
@@ -316,6 +323,7 @@ function dialog(title, subtitle, form, submit, handler) {
     try {
       await handler(Object.fromEntries(new FormData(f)));
       modal.close();
+      if (closeApplication) return;
       await refresh();
       toast("Enregistrement effectué.");
     } catch (err) {
@@ -460,8 +468,8 @@ function exportReport() {
     `tempo-rapport-${month}.csv`,
   );
 }
-async function confirmation(title, message, run) {
-  dialog(title, message, "", "Confirmer", run);
+async function confirmation(title, message, run, closeApplication = false) {
+  dialog(title, message, "", "Confirmer", run, closeApplication);
 }
 document.addEventListener("click", async (event) => {
   const target = event.target.closest("[data-page],[data-action]");
@@ -495,6 +503,19 @@ document.addEventListener("click", async (event) => {
         break;
       case "account":
         accountDialog();
+        break;
+      case "quit":
+        confirmation(
+          "Quitter Tempo ?",
+          "Vos données sont conservées sur cet ordinateur. Double-cliquez sur Tempo.exe pour revenir.",
+          async () => {
+            await api("/api/desktop/quit", "POST", {});
+            modal.close();
+            state = null;
+            app.innerHTML = `<div class="loading"><h1>Tempo est fermé.</h1><p>Vos données sont enregistrées. Vous pouvez fermer cet onglet.</p><p>Double-cliquez sur Tempo.exe pour revenir.</p></div>`;
+          },
+          true,
+        );
         break;
       case "logout":
         await api("/api/logout", "POST", {});

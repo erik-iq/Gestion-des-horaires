@@ -1,0 +1,48 @@
+name: Application Windows
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.19.0"
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build:windows
+      - name: Vérifier le moteur embarqué
+        run: TEMPO_TEST_EXECUTABLE="$PWD/dist/build/Tempo-linux-test" node --test test/desktop.test.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tempo-Windows-x64
+          path: |
+            dist/Tempo-Windows-x64.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+  verify-windows:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.19.0"
+      - uses: actions/download-artifact@v4
+        with:
+          name: Tempo-Windows-x64
+          path: download
+      - name: Extraire l'application
+        shell: pwsh
+        run: Expand-Archive -Path download/Tempo-Windows-x64.zip -DestinationPath portable
+      - name: Tester l'exécutable Windows
+        shell: pwsh
+        run: |
+          $env:TEMPO_TEST_EXECUTABLE = "$env:GITHUB_WORKSPACE\portable\Tempo.exe"
+          node --test test/desktop.test.js

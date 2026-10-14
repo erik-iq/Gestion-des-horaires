@@ -1,0 +1,33 @@
+# Déploiement d'une seule instance avec un disque persistant.
+# L'offre Starter et le disque sont payants : vérifier le tarif avant création.
+services:
+  - type: web
+    name: tempo-horaires
+    runtime: node
+    plan: starter
+    region: frankfurt
+    branch: main
+    buildCommand: npm test
+    startCommand: npm start
+    healthCheckPath: /api/status
+    disk:
+      name: tempo-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: DB_PATH
+        value: /var/data/horaires.sqlite
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: BOOTSTRAP_ADMIN_NAME
+        value: Administrateur
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
