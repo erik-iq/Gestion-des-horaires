@@ -6,7 +6,7 @@ Application web en français pour suivre les heures de travail, les vacances et 
 
 La version portable est destinée à **Windows 10/11 x64**.
 
-1. Téléchargez `Tempo-Windows-x64.zip`, puis utilisez **Extraire tout** dans Windows.
+1. [Téléchargez Tempo pour Windows](https://github.com/erik-iq/Gestion-des-horaires/raw/refs/heads/main/downloads/Tempo-Windows-x64.zip), puis utilisez **Extraire tout** dans Windows.
 2. Ouvrez le dossier extrait et double-cliquez sur **Tempo.exe**. Il n’y a ni Node.js à installer, ni commande à exécuter. L’interface s’ouvre dans votre navigateur habituel ; l’application fonctionne sur votre ordinateur, même sans Internet.
 3. Au premier lancement, créez votre compte administrateur avec un mot de passe d’au moins 10 caractères.
 4. Saisissez une journée de 08:00 à 17:00 avec 60 minutes de pause : le temps net doit être **8h00**. Créez un utilisateur, demandez un jour ouvré de vacances puis approuvez-le comme administrateur : le solde par défaut passe de **25 à 24 jours**.
