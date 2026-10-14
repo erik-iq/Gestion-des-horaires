@@ -1,16 +1,19 @@
 # Tempo — Gestion des horaires
 
-Application web en français pour suivre les heures de travail, les vacances et la présence d’une équipe. Interface adaptée aux ordinateurs et aux téléphones, stockage SQLite persistant, serveur Node.js sans dépendance externe.
+Application web en français pour suivre les heures de travail, les vacances et la présence d’une équipe. Interface adaptée aux ordinateurs et aux téléphones, stockage SQLite persistant, serveur Node.js avec génération PDF intégrée.
 
-## Nouveautés de la version 1.1
+## Nouveautés de la version 2.0
 
-- **Nouveau thème clair**, inspiré d’IQ Brain : fond gris, navigation claire, cartes blanches arrondies et accents pastel bleu, violet et rose.
-- **Calendrier mensuel** dans « Mes horaires » : heures, temps net, vacances approuvées et demandes en attente. Navigation entre les mois, retour à aujourd’hui et sélection d’un mois précis.
-- Cliquez sur une date pour voir son détail. **Double-cliquez** sur une date passée ou aujourd’hui pour saisir ou modifier vos heures. Les flèches du clavier permettent aussi de changer de journée.
-- Une date future permet de préparer une demande de vacances. Les heures futures ne sont pas enregistrables.
-- Les administrateurs peuvent consulter le calendrier d’un collaborateur ; chacun continue à modifier uniquement ses propres heures. La vue liste et l’export mensuel restent disponibles.
-- Les jours de vacances se comptent toujours du lundi au vendredi. Les week-ends inclus dans une période de vacances sont affichés, sans être ajoutés au décompte.
-- Navigation plus fluide : sélection d’une date sans recharger toute la page, données du calendrier indexées, formats de dates réutilisés, index SQLite ajoutés et ressources Windows minifiées.
+- **Thèmes clair et sombre** inspirés d’IQ Brain, logo IQ intégré, choix mémorisé et interface adaptée aux petits écrans.
+- **Quatre vues des horaires** : mois, semaine, journée et liste, avec navigation et détail des journées.
+- **Contrats et solde d’heures** : objectif par jour de la semaine, changements datés, ajustement du solde de départ, différence mensuelle et cumul. Dans **Utilisateurs → Contrat**, l’administrateur règle les horaires de chaque collaborateur.
+- **Saisie rapide** : horaires favoris, semaines types, copie d’une semaine enregistrée et remplissage d’une période sur les jours sélectionnés. Les journées verrouillées et les vacances approuvées sont ignorées ; remplacer des saisies existantes exige de cocher cette option.
+- **Planning hebdomadaire partagé** : horaires et vacances de toute l’équipe, sans notes privées ni données de contrat.
+- **Validation mensuelle** : l’administrateur valide un mois terminé dans les rapports. Les totaux sont figés et les écritures concernant ce mois sont verrouillées. La réouverture exige un motif et figure dans l’historique.
+- **Rapports PDF** : logo, collaborateur, journées détaillées, heures attendues et réalisées, congés crédités, écart, validation et zones de signature. Export personnel ou équipe complète ; CSV toujours disponible.
+- **Historique des modifications** : saisies, contrats, soldes de vacances, demandes, validations et changements de comptes. Les collaborateurs voient leur propre historique ; l’administrateur consulte l’ensemble. Aucun mot de passe n’est journalisé.
+
+Après une mise à jour, les contrats existants sont initialisés du lundi au vendredi à partir de l’ancien objectif quotidien. **Vérifiez leur date de départ et leurs horaires**, puis renseignez un ajustement si vous aviez déjà un solde d’heures. L’historique commence avec cette version : les anciennes modifications ne peuvent pas être reconstituées.
 
 ### Mettre à jour votre application existante
 
@@ -28,14 +31,14 @@ La version portable est destinée à **Windows 10/11 x64**.
 2. Ouvrez le dossier extrait et double-cliquez sur **Tempo.exe**. Il n’y a ni Node.js à installer, ni commande à exécuter. L’interface s’ouvre dans votre navigateur habituel ; l’application fonctionne sur votre ordinateur, même sans Internet.
 3. Au premier lancement, créez votre compte administrateur avec un mot de passe d’au moins 10 caractères.
 4. Saisissez une journée de 08:00 à 17:00 avec 60 minutes de pause : le temps net doit être **8h00**. Créez un utilisateur, demandez un jour ouvré de vacances puis approuvez-le comme administrateur : le solde par défaut passe de **25 à 24 jours**.
-5. Testez le rapport mensuel et son export CSV. Pour fermer complètement le programme, cliquez sur **Quitter Tempo** en haut de l’interface, puis confirmez. Fermer seulement l’onglet laisse le service local actif ; un nouveau double-clic sur l’exécutable rouvre la même application.
+5. Testez les vues Jour/Semaine, le bouton de thème dans la barre supérieure, puis le rapport mensuel et ses exports PDF/CSV. Pour fermer complètement le programme, cliquez sur **Quitter Tempo** en haut de l’interface, puis confirmez. Fermer seulement l’onglet laisse le service local actif ; un nouveau double-clic sur l’exécutable rouvre la même application.
 6. Rouvrez `Tempo.exe` et reconnectez-vous : les comptes, horaires et vacances sont conservés.
 
 Les données sont stockées dans **`%LOCALAPPDATA%\Tempo`**, indépendamment du dossier de l’exécutable. Pour sauvegarder, quittez Tempo puis copiez tout ce dossier. Il ne faut pas lancer l’application depuis le ZIP : extrayez-le d’abord.
 
 Cette version stocke ses données sur **un seul ordinateur et un seul compte Windows**. Plusieurs PC ne partagent pas automatiquement leurs comptes ou horaires ; l’hébergement web ci-dessous reste une option pour une équipe utilisant plusieurs ordinateurs.
 
-Le fichier de cette première version n’est pas signé par un certificat éditeur. Windows peut afficher un avertissement. Le fichier `SHA256SUMS.txt` fourni permet de vérifier son intégrité ; ne désactivez pas les protections Windows.
+Le fichier portable n’est pas signé par un certificat éditeur. Windows peut afficher un avertissement. Le fichier `SHA256SUMS.txt` fourni permet de vérifier son intégrité ; ne désactivez pas les protections Windows.
 
 ### Reconstruire la version Windows (développement seulement)
 
@@ -71,6 +74,7 @@ Node.js **24 ou supérieur** est nécessaire (module natif `node:sqlite`).
 
 ```sh
 cd /workspace/Gestion-des-horaires
+npm ci
 npm start
 ```
 
@@ -81,23 +85,26 @@ npm run dev  # Redémarrage automatique du serveur pendant le développement
 npm test     # Tests HTTP, autorisations, congés et persistance
 ```
 
-Les tests utilisent une base temporaire séparée et ne modifient pas les données de travail. Aucune dépendance externe n’est requise pour lancer le serveur depuis les sources. `npm ci` installe les outils nécessaires uniquement à la fabrication des exécutables.
+Les tests utilisent une base temporaire séparée et ne modifient pas les données de travail. `npm ci` installe les bibliothèques PDF et les outils de compilation. L’exécutable Windows embarque ces ressources et ne nécessite aucune installation sur le PC utilisateur.
 
 ## Fonctions
 
 - **Tableau de bord** : heures de la semaine et du mois, graphique hebdomadaire, dernières saisies et solde annuel.
-- **Horaires** : calendrier mensuel et vue liste, arrivée, départ, pause et note ; modification et suppression de ses propres journées ; export CSV.
+- **Horaires** : vues mois, semaine, journée et liste, saisie rapide, arrivée, départ, pause et note ; modification et suppression de ses propres journées ; export CSV.
 - **Vacances** : demandes, annulation des demandes en attente, approbation ou refus par un administrateur. Le solde est automatiquement déduit lors de l’approbation.
 - **Présence** : tableau partagé de l’équipe pour le jour courant, avec heures déclarées, vacances approuvées ou journée non renseignée.
-- **Rapports mensuels** : synthèse et détail personnel ; sélection d’un collaborateur ou de toute l’équipe pour les administrateurs ; téléchargement CSV compatible avec les tableurs.
-- **Administration** : création des comptes, rôle, quota annuel, objectif quotidien, consultation des soldes et réinitialisation des mots de passe.
+- **Rapports mensuels** : synthèse et détail personnel ; sélection d’un collaborateur ou de toute l’équipe pour les administrateurs ; téléchargements PDF et CSV, validation et verrouillage administrateur.
+- **Administration** : création des comptes, rôle, quota annuel, contrats hebdomadaires datés, consultation des soldes et réinitialisation des mots de passe.
 
-Les collaborateurs accèdent uniquement à leurs propres heures et demandes. La liste de présence expose les noms et horaires du jour, pas les e-mails, les notes privées ou les quotas des autres membres. Les administrateurs peuvent consulter les horaires et congés de l’équipe.
+Les collaborateurs modifient uniquement leurs propres heures et demandes. Le planning d’équipe partage les horaires et absences déclarés, sans notes privées. La liste de présence expose les noms et horaires du jour, pas les e-mails, les notes privées ou les quotas des autres membres. Les administrateurs peuvent consulter les horaires et congés de l’équipe.
 
 ## Règles de calcul
 
 - Temps net = départ − arrivée − pause. Une saisie par personne et par date ; saisir à nouveau la même date la met à jour. La date ne peut pas être future et doit être hors des vacances approuvées.
-- Les heures passant minuit doivent être réparties sur deux journées. Les totaux mensuels correspondent aux saisies, sans calcul automatique d’heures supplémentaires ni calcul de paie.
+- Les heures passant minuit doivent être réparties sur deux journées. Le solde d’heures correspond au travail net plus les heures de congés approuvés créditées au contrat, moins les heures contractuelles attendues, plus les ajustements datés. Aucun calcul de paie n’est effectué.
+- L’objectif est calculé à partir du début du contrat jusqu’à aujourd’hui ou la fin du mois passé. Les jours ouvrés non renseignés créent un déficit **provisoire** et sont signalés dans les rapports. Le mois en cours inclut l’objectif complet de la journée courante. Les mois validés conservent leurs totaux figés.
+- Les congés approuvés créditent les heures prévues au contrat pour chaque journée ; une journée déjà travaillée n’est pas créditée deux fois. Le décompte du **quota de vacances** reste distinct, en jours du lundi au vendredi.
+- Le solde cumulé part du premier contrat et reprend les mois validés. Un changement de contrat affecte uniquement sa date d’effet et les dates suivantes ; un ajustement de départ ne s’applique qu’à partir de sa date. Les changements rétroactifs affectant un mois verrouillé sont refusés.
 - Vacances : jours entiers du lundi au vendredi, **jours fériés inclus**. Le quota annuel est configurable, 25 jours par défaut. Les demandes en attente réservent le solde lors de nouvelles demandes. Les périodes qui se chevauchent sont refusées. Les demandes sur deux années doivent être séparées.
 - Le quota est identique chaque année ; aucun report de jours d’une année à l’autre. Les congés approuvés futurs sont inclus dans le solde de leur année.
 - La présence repose sur les déclarations du jour, **pas sur un pointage en temps réel**. Une journée sans déclaration ne constitue pas automatiquement une absence.
@@ -120,8 +127,12 @@ Les variables facultatives `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` e
 
 Les mots de passe sont hachés avec scrypt et un sel aléatoire. Les sessions durent 24 heures et sont conservées en mémoire : un redémarrage demande une nouvelle connexion. Cookies HttpOnly et SameSite Strict ; contrôles d’autorisation côté serveur ; contrôle des origines pour les écritures ; limitation des tentatives de connexion ; exports protégés contre les formules de tableur.
 
-Avant une utilisation avec une équipe réelle, hébergez derrière HTTPS, définissez `COOKIE_SECURE=true`, protégez le volume de données et planifiez les sauvegardes. Créez le premier administrateur avant d’ouvrir le service au public. Pour une sauvegarde simple, arrêtez le serveur puis copiez **tout le répertoire `data/`** dans un emplacement sécurisé. Pour restaurer, arrêtez le serveur et replacez le répertoire sauvegardé. L’application est prévue pour une seule instance serveur ; elle ne fournit pas d’envoi d’e-mails, de MFA ou de journal d’audit.
+Avant une utilisation avec une équipe réelle, hébergez derrière HTTPS, définissez `COOKIE_SECURE=true`, protégez le volume de données et planifiez les sauvegardes. Créez le premier administrateur avant d’ouvrir le service au public. Pour une sauvegarde simple, arrêtez le serveur puis copiez **tout le répertoire `data/`** dans un emplacement sécurisé. Pour restaurer, arrêtez le serveur et replacez le répertoire sauvegardé. L’application est prévue pour une seule instance serveur ; elle ne fournit pas d’envoi d’e-mails, de MFA. Un historique applicatif est conservé dans SQLite ; il n’est pas un registre externe inviolable.
 
 ## Environnement cloud
 
 Utiliser le dépôt existant dans `/workspace/Gestion-des-horaires`. Les tâches cloud sont déjà isolées ; ne pas créer de worktree sauf demande explicite. Les fichiers et la base persistent sur le volume/snapshot ; le processus serveur doit être relancé dans une nouvelle tâche. L’enregistrement des instructions de démarrage ne publie pas l’environnement.
+
+## Ressources et licences
+
+Le logo IQ fourni a été adapté en ressource transparente pour l’interface et les rapports. Les PDF sont générés avec `pdf-lib` et `@pdf-lib/fontkit`. La police DejaVu Sans embarquée assure les accents ; sa licence est conservée dans `public/assets/FONT-LICENSE.txt`. Les licences du moteur Node.js et de la police sont incluses dans la distribution Windows.

@@ -7,7 +7,7 @@ services:
     plan: starter
     region: frankfurt
     branch: main
-    buildCommand: npm test
+    buildCommand: npm ci && npm test
     startCommand: npm start
     healthCheckPath: /api/status
     disk:

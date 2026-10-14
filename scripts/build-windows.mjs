@@ -86,7 +86,19 @@ const blob = path.join(cache, "tempo.blob");
 const config = path.join(cache, "sea.json");
 const assetsDirectory = path.join(cache, "assets");
 await mkdir(assetsDirectory, { recursive: true });
-const frontendFiles = ["index.html", "app.js", "calendar.js", "style.css"];
+const frontendFiles = [
+  "index.html",
+  "app.js",
+  "calendar.js",
+  "metrics.js",
+  "theme.js",
+  "style.css",
+];
+const binaryAssets = [
+  "assets/logo.png",
+  "assets/report-font.ttf",
+  "assets/FONT-LICENSE.txt",
+];
 for (const name of frontendFiles) {
   const source = await readFile(path.join(root, "public", name), "utf8");
   const contents =
@@ -116,6 +128,7 @@ await writeFile(
           name,
           path.join(assetsDirectory, name),
         ]),
+        ...binaryAssets.map((name) => [name, path.join(root, "public", name)]),
         ["licenses.txt", path.join(cache, "LICENSE")],
       ]),
     },
@@ -150,7 +163,7 @@ await copyFile(
 );
 await writeFile(
   path.join(dist, "LISEZ-MOI.txt"),
-  `TEMPO ${appVersion} — Application Windows portable\r\n\r\n1. Extraire ce ZIP puis double-cliquer sur Tempo.exe. Aucun logiciel supplémentaire à installer.\r\n2. L'interface s'ouvre dans votre navigateur. Connectez-vous, ou créez votre premier compte lors d'une nouvelle utilisation.\r\n3. Saisir vos heures et gérer vos vacances et utilisateurs.\r\n4. Mes horaires affiche le calendrier. Cliquez sur une date pour son détail ; double-cliquez pour saisir ou modifier.\r\n5. Utiliser « Quitter Tempo » dans l'application pour l'arrêter complètement.\r\n\r\nMISE À JOUR : quittez d'abord l'ancienne version, puis ouvrez le nouveau Tempo.exe. Ne supprimez pas %LOCALAPPDATA%\\Tempo : vos comptes et vos données sont conservés.\r\n\r\nCompatible avec Windows 10/11, processeur x64.\r\nDonnées : %LOCALAPPDATA%\\Tempo\\horaires.sqlite\r\nLes données sont locales à votre compte Windows. Plusieurs PC ne synchronisent pas leurs données.\r\nPour sauvegarder, quitter Tempo et copier tout le dossier %LOCALAPPDATA%\\Tempo.\r\n\r\nCette version n'est pas signée avec un certificat éditeur. Une alerte Windows est possible.\r\nNe désactivez pas votre antivirus. Le fichier SHA256SUMS.txt permet de contrôler son intégrité.\r\n\r\nL'interface s'ouvre dans le navigateur : le service fonctionne uniquement sur votre ordinateur.\r\nNode.js ${version} est intégré ; ses licences sont incluses dans LICENSE-Node.txt et dans l'application.\r\n`,
+  `TEMPO ${appVersion} — Application Windows portable\r\n\r\n1. Extraire ce ZIP puis double-cliquer sur Tempo.exe. Aucun logiciel supplémentaire à installer.\r\n2. L'interface s'ouvre dans votre navigateur. Connectez-vous, ou créez votre premier compte lors d'une nouvelle utilisation.\r\n3. Saisir vos heures et gérer vos vacances et utilisateurs.\r\n4. Utilisez les vues mois, semaine, jour ou liste ; le solde d'heures, les saisies rapides et les validations sont accessibles dans les menus.\r\n5. Les rapports PDF intègrent le logo et les signatures ; le thème clair/sombre se change en haut de l'application.\r\n6. Utiliser « Quitter Tempo » dans l'application pour l'arrêter complètement.\r\n\r\nMISE À JOUR : quittez d'abord l'ancienne version, puis ouvrez le nouveau Tempo.exe. Ne supprimez pas %LOCALAPPDATA%\\Tempo : vos comptes et vos données sont conservés.\r\n\r\nCompatible avec Windows 10/11, processeur x64.\r\nDonnées : %LOCALAPPDATA%\\Tempo\\horaires.sqlite\r\nLes données sont locales à votre compte Windows. Plusieurs PC ne synchronisent pas leurs données.\r\nPour sauvegarder, quitter Tempo et copier tout le dossier %LOCALAPPDATA%\\Tempo.\r\n\r\nCette version n'est pas signée avec un certificat éditeur. Une alerte Windows est possible.\r\nNe désactivez pas votre antivirus. Le fichier SHA256SUMS.txt permet de contrôler son intégrité.\r\n\r\nL'interface s'ouvre dans le navigateur : le service fonctionne uniquement sur votre ordinateur.\r\nNode.js ${version} est intégré ; ses licences sont incluses dans LICENSE-Node.txt et dans l'application.\r\n`,
 );
 const zipName = "Tempo-Windows-x64.zip";
 await exec("zip", [

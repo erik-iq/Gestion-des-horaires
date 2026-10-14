@@ -1,4 +1,11 @@
 import {
+  monthSummary,
+  overtimeBalance,
+  signedDuration,
+  weekDates as datesForWeek,
+  scheduleFor,
+} from "./metrics.js";
+import {
   shiftMonth,
   shiftDay,
   indexCalendar,
@@ -7,6 +14,10 @@ import {
 const app = document.querySelector("#app"),
   modal = document.querySelector("#modal");
 const icons = {
+  moon: '<path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10Z"/>',
+  shield:
+    '<path d="m12 3 8 4v6c0 4-4 7-8 9-4-2-8-5-8-9V7l8-4Z"/><path d="m8 12 3 3 5-6"/>',
+  history: '<path d="M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v5l3 2"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
@@ -68,7 +79,7 @@ const labels = {
 const badge = (status) =>
   `<span class="badge ${status}"><i></i>${labels[status]}</span>`;
 const brand = () =>
-  `<div class="brand"><span class="brand-mark">t</span><div>tempo<small>Le temps, simplement.</small></div></div>`;
+  `<div class="brand"><img class="company-logo" src="/assets/logo.png" alt="Logo IQ"><div>tempo<small>Le temps, simplement.</small></div></div>`;
 let state,
   page = "dashboard",
   month = "",
@@ -78,6 +89,11 @@ let state,
   selectedDate = "",
   calendarUser = "",
   calendarIndex = null;
+let metricCache = new Map(),
+  teamData = null,
+  teamStart = "",
+  historyData = null,
+  historyOffset = 0;
 async function api(url, method = "GET", data) {
   const r = await fetch(url, {
     method,
@@ -133,6 +149,9 @@ async function refresh() {
   if (!month) month = state.today.slice(0, 7);
   if (!reportUser) reportUser = String(state.user.id);
   calendarIndex = null;
+  metricCache.clear();
+  teamData = null;
+  historyData = null;
   if (!calendarUser || !state.users.some((u) => String(u.id) === calendarUser))
     calendarUser = String(state.user.id);
   if (!selectedDate) selectedDate = state.today;
@@ -152,6 +171,9 @@ const pageTitles = {
   attendance: "Présence de l’équipe",
   reports: "Rapports mensuels",
   users: "Gestion des utilisateurs",
+  overtime: "Solde d’heures",
+  team: "Planning de l’équipe",
+  history: "Historique des modifications",
 };
 function heading(
   title,
@@ -168,14 +190,401 @@ function renderContent() {
   const content = app.querySelector(".content");
   if (!content) return render();
   content.innerHTML =
-    { dashboard, hours, leaves, attendance, reports, users }[page]() + footer();
+    {
+      dashboard,
+      hours,
+      leaves,
+      attendance,
+      reports,
+      users,
+      overtime,
+      team,
+      history,
+    }[page]() + footer();
 }
 function footer() {
   return `<footer class="footer"><span>Tempo · Votre temps, en clair.${state.desktop ? " · Données locales" : ""}</span><span>Votre espace ${state.user.role === "admin" ? "administrateur" : "collaborateur"}</span></footer>`;
 }
 function render() {
-  app.innerHTML = `<div class="shell"><aside class="sidebar">${brand()}<div class="nav-label">Espace personnel</div><nav class="nav" aria-label="Navigation principale">${navItem("dashboard", "Vue d’ensemble", "grid")}${navItem("hours", "Mes horaires", "calendar")}${navItem("leaves", "Vacances", "sun")}${navItem("attendance", "Présence", "people")}${navItem("reports", "Rapports mensuels", "report")}${state.user.role === "admin" ? `<div class="nav-label">Administration</div>${navItem("users", "Utilisateurs", "people")}` : ""}</nav><div class="sidebar-bottom">${person(state.user, state.user.role === "admin" ? "Administrateur" : "Collaborateur")}<button class="logout" data-action="logout">${icon("logout")}Se déconnecter</button></div></aside><main class="main"><header class="topbar"><div class="breadcrumb"><button class="mobile-menu" data-action="menu" aria-label="Ouvrir le menu">${icon("menu")}</button><span>Mon espace /</span><b>${pageTitles[page]}</b></div><div class="topbar-right">${state.desktop && state.user.role === "admin" ? `<button class="refresh-button" data-action="quit" title="Quitter Tempo" aria-label="Quitter Tempo">${icon("logout")}</button>` : ""}<button class="refresh-button" data-action="refresh" title="Actualiser les données" aria-label="Actualiser les données">${icon("arrow")}</button><span class="date-chip">${icon("calendar")}${fmt(state.today, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</span><button class="avatar account-button" data-action="account" aria-label="Mon compte : ${esc(state.user.name)}" title="Mon compte">${esc(initials(state.user.name))}</button></div></header><div class="content">${{ dashboard: dashboard, hours: hours, leaves: leaves, attendance: attendance, reports: reports, users: users }[page]()}${footer()}</div></main></div>`;
+  app.innerHTML = `<div class="shell"><aside class="sidebar">${brand()}<div class="nav-label">Espace personnel</div><nav class="nav" aria-label="Navigation principale">${navItem("dashboard", "Vue d’ensemble", "grid")}${navItem("hours", "Mes horaires", "calendar")}${navItem("leaves", "Vacances", "sun")}${navItem("attendance", "Présence", "people")}${navItem("overtime", "Solde d’heures", "clock")}${navItem("team", "Planning équipe", "people")}${navItem("reports", "Rapports mensuels", "report")}${navItem("history", "Historique", "history")}${state.user.role === "admin" ? `<div class="nav-label">Administration</div>${navItem("users", "Utilisateurs", "people")}` : ""}</nav><div class="sidebar-bottom">${person(state.user, state.user.role === "admin" ? "Administrateur" : "Collaborateur")}<button class="logout" data-action="logout">${icon("logout")}Se déconnecter</button></div></aside><main class="main"><header class="topbar"><div class="breadcrumb"><button class="mobile-menu" data-action="menu" aria-label="Ouvrir le menu">${icon("menu")}</button><span>Mon espace /</span><b>${pageTitles[page]}</b></div><div class="topbar-right"><button class="refresh-button" data-action="theme" aria-label="Changer le thème" title="Mode clair / sombre">${icon(document.documentElement.dataset.theme === "dark" ? "sun" : "moon")}</button>${state.desktop && state.user.role === "admin" ? `<button class="refresh-button" data-action="quit" title="Quitter Tempo" aria-label="Quitter Tempo">${icon("logout")}</button>` : ""}<button class="refresh-button" data-action="refresh" title="Actualiser les données" aria-label="Actualiser les données">${icon("arrow")}</button><span class="date-chip">${icon("calendar")}${fmt(state.today, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</span><button class="avatar account-button" data-action="account" aria-label="Mon compte : ${esc(state.user.name)}" title="Mon compte">${esc(initials(state.user.name))}</button></div></header><div class="content">${{ dashboard, hours, leaves, attendance, reports, users, overtime, team, history }[page]()}${footer()}</div></main></div>`;
 }
+function isLocked(userId, date) {
+  return (state.locks || []).some(
+    (l) => l.user_id === userId && l.month === date.slice(0, 7),
+  );
+}
+function summary(user, period) {
+  const key = user.id + ":" + period;
+  if (!metricCache.has(key))
+    metricCache.set(
+      key,
+      monthSummary(
+        user,
+        state.entries,
+        state.leaves,
+        state.contracts || [],
+        state.locks || [],
+        period,
+        state.today,
+      ),
+    );
+  return metricCache.get(key);
+}
+const windowSummary = summary;
+function ledger(user, until = state.today.slice(0, 7)) {
+  const key = "total:" + user.id + ":" + until;
+  if (!metricCache.has(key))
+    metricCache.set(
+      key,
+      overtimeBalance(
+        user,
+        state.entries,
+        state.leaves,
+        state.contracts || [],
+        state.locks || [],
+        state.today,
+        until,
+      ),
+    );
+  return metricCache.get(key);
+}
+function personalWeek(user) {
+  const dates = datesForWeek(selectedDate),
+    data = calendarData();
+  return `<section class="panel"><div class="calendar-head"><div><span class="eyebrow">Vue semaine</span><h2>${fmt(dates[0])} — ${fmt(dates[6])}</h2></div><div class="month-navigation"><button class="icon-button" data-action="week-prev" aria-label="Semaine précédente">${icon("chevronLeft")}</button><button class="btn secondary small" data-action="month-today">Aujourd’hui</button><button class="icon-button" data-action="week-next" aria-label="Semaine suivante">${icon("chevronRight")}</button></div></div><div class="calendar-weekdays">${dates.map((d) => `<span>${fmt(d, { weekday: "short", day: "numeric" })}</span>`).join("")}</div><div class="calendar-grid personal-week">${dates.map((date) => calendarCell({ date, inMonth: true, weekend: [0, 6].includes(new Date(date).getUTCDay()) }, data)).join("")}</div></section><div class="week-detail">${selectedDayPanel(data, user)}</div>`;
+}
+function dayView(user) {
+  return `<div class="day-view"><section class="panel"><div class="calendar-head"><div><span class="eyebrow">Vue journée</span><h2>${fmt(selectedDate, { day: "numeric", month: "long", year: "numeric" })}</h2></div><div class="month-navigation"><button class="icon-button" data-action="day-prev" aria-label="Jour précédent">${icon("chevronLeft")}</button><button class="btn secondary small" data-action="month-today">Aujourd’hui</button><button class="icon-button" data-action="day-next" aria-label="Jour suivant">${icon("chevronRight")}</button></div></div><p class="notice">${esc(user.name)} · ${signedDuration((scheduleFor(state.contracts || [], user.id, selectedDate)?.schedule || [])[(new Date(selectedDate).getUTCDay() + 6) % 7] || 0)} prévues au contrat pour cette journée.</p></section>${selectedDayPanel(calendarData(), user)}</div>`;
+}
+function overtime() {
+  const user = selectedCalendarUser(),
+    data = summary(user, month),
+    total = ledger(user, month);
+  const selector =
+    state.user.role === "admin"
+      ? `<label for="overtime-user">Collaborateur</label><select id="overtime-user">${state.users.map((u) => `<option value="${u.id}" ${u.id === user.id ? "selected" : ""}>${esc(u.name)}</option>`).join("")}</select>`
+      : "";
+  return (
+    heading(
+      "Vos heures, à l’équilibre.",
+      "Un solde transparent, calculé selon le contrat de chaque collaborateur.",
+      state.user.role === "admin"
+        ? `<button class="btn" data-action="contract" data-id="${user.id}">${icon("clock")}Configurer le contrat</button>`
+        : "",
+      "Solde d’heures",
+    ) +
+    monthFilter(selector) +
+    `<div class="stats">${stat("Heures réalisées", duration(data.worked_minutes), "", "Dans le mois sélectionné", "clock")}${stat("Heures contractuelles", duration(data.expected_minutes), "", "Jusqu’à la date de calcul", "calendar")}${stat("Écart du mois", signedDuration(data.delta_minutes), "", data.locked ? "Mois validé" : "Provisoire", "report")}${stat("Solde cumulé", signedDuration(total.minutes), "", "Depuis le début du suivi", "clock", true)}</div><div class="notice">${data.locked ? "Ce mois est validé : ses totaux sont figés." : "Solde provisoire : " + data.missing_days + " journée(s) non renseignée(s) sont comprises dans les heures manquantes."} ${data.unconfigured_days ? data.unconfigured_days + " journée(s) n’ont pas de contrat défini. " : ""}Les vacances approuvées créditent les heures normalement prévues ; les jours fériés ne sont pas neutralisés automatiquement.</div><section class="panel"><div class="panel-head"><div><h2>Le détail du calcul</h2><p>${esc(user.name)} · ${fmt(month + "-01", { month: "long", year: "numeric" })}</p></div>${validationControls(user)}</div><div class="table-wrap"><table><tbody><tr><td>Travail saisi</td><td>${duration(data.worked_minutes)}</td></tr><tr><td>Crédit de vacances approuvées</td><td>${duration(data.vacation_credit)}</td></tr><tr><td>Heures prévues au contrat</td><td>−${duration(data.expected_minutes)}</td></tr><tr><td>Ajustements du solde</td><td>${signedDuration(data.adjustment_minutes)}</td></tr><tr class="report-total"><td>Écart du mois</td><td>${signedDuration(data.delta_minutes)}</td></tr></tbody></table></div></section><section class="panel bottom-panel"><div class="panel-head"><div><h2>Évolution du contrat</h2><p>Les changements s’appliquent à partir de leur date d’effet.</p></div></div><div class="table-wrap"><table><thead><tr><th>À partir du</th><th>Horaire hebdomadaire</th><th>Ajustement</th></tr></thead><tbody>${(
+      state.contracts || []
+    )
+      .filter((c) => c.user_id === user.id)
+      .map(
+        (c) =>
+          `<tr><td>${fmt(c.effective_from, { day: "numeric", month: "long", year: "numeric" })}</td><td>${duration(c.schedule.reduce((a, b) => a + b, 0))} / semaine</td><td>${signedDuration(c.opening_minutes)}</td></tr>`,
+      )
+      .join("")}</tbody></table></div></section>`
+  );
+}
+async function loadPage() {
+  const requested = page;
+  try {
+    if (page === "team" && !teamData) {
+      if (!teamStart) teamStart = datesForWeek(state.today)[0];
+      const start = teamStart;
+      const data = await api("/api/team-week?start=" + start);
+      if (page === requested && teamStart === start) {
+        teamData = data;
+        renderContent();
+      }
+    }
+    if (page === "history" && !historyData) {
+      const offset = historyOffset;
+      const data = await api("/api/history?offset=" + offset);
+      if (page === requested && historyOffset === offset) {
+        historyData = data;
+        renderContent();
+      }
+    }
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+function team() {
+  if (!teamStart) teamStart = datesForWeek(state.today)[0];
+  const dates = datesForWeek(teamStart);
+  return (
+    heading(
+      "Votre équipe, semaine après semaine.",
+      "Les horaires et les absences de chacun, dans une vue partagée.",
+      "",
+      "Planning hebdomadaire",
+    ) +
+    `<div class="filters"><button class="btn secondary" data-action="team-prev">${icon("chevronLeft")}Précédente</button><strong>${fmt(dates[0])} — ${fmt(dates[6])}</strong><button class="btn secondary" data-action="team-next">Suivante${icon("chevronRight")}</button><button class="btn secondary" data-action="team-today">Cette semaine</button></div><div class="notice">Cette vue montre les horaires déclarés et les vacances. Les notes personnelles et les informations du contrat restent privées.</div><section class="panel">${
+      !teamData
+        ? empty("Chargement de la semaine…")
+        : `<div class="table-wrap"><table class="team-week"><thead><tr><th>Collaborateur</th>${dates.map((d) => `<th>${fmt(d, { weekday: "short", day: "numeric", month: "short" })}</th>`).join("")}</tr></thead><tbody>${teamData.users
+            .map(
+              (u) =>
+                `<tr><td>${person(u)}</td>${dates
+                  .map((d) => {
+                    const e = teamData.entries.find(
+                        (e) => e.user_id === u.id && e.date === d,
+                      ),
+                      l = teamData.leaves.find(
+                        (l) => l.user_id === u.id && l.start <= d && l.end >= d,
+                      );
+                    return `<td class="${d === state.today ? "team-today" : ""}">${e ? `<span class="team-work"><strong>${duration(entryMinutes(e))}</strong><small>${e.start} — ${e.end}</small></span>` : l ? badge(l.status === "approved" ? "leave" : "pending") : '<span class="team-empty">—</span>'}</td>`;
+                  })
+                  .join("")}</tr>`,
+            )
+            .join("")}</tbody></table></div>`
+    }</section>`
+  );
+}
+function auditDescription(before, after) {
+  const labels = {
+    name: "Nom",
+    email: "E-mail",
+    role: "Rôle",
+    allowance: "Quota vacances (jours)",
+    daily_hours: "Objectif quotidien (heures)",
+    date: "Date",
+    start: "Début",
+    end: "Fin",
+    break_minutes: "Pause (minutes)",
+    note: "Note",
+    days: "Jours de vacances",
+    status: "Statut",
+    effective_from: "Date d’effet",
+    schedule: "Horaire hebdomadaire",
+    opening_minutes: "Ajustement",
+    reason: "Motif",
+    worked_minutes: "Travail",
+    expected_minutes: "Contrat",
+    vacation_credit: "Crédit vacances",
+    adjustment_minutes: "Ajustement",
+    delta_minutes: "Écart du mois",
+    month: "Mois",
+    missing_days: "Journées non renseignées",
+  };
+  const value = (key, v) =>
+    key === "schedule"
+      ? v
+          .map(
+            (n, i) =>
+              ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"][i] +
+              ": " +
+              duration(n),
+          )
+          .join(" · ")
+      : key.endsWith("_minutes") || key === "vacation_credit"
+        ? signedDuration(v)
+        : key === "status"
+          ? labels[v] || v
+          : String(v);
+  const display = (name, data) =>
+    data
+      ? `<strong>${name}</strong><pre>${esc(
+          Object.entries(data)
+            .filter(([k]) => labels[k])
+            .map(([k, v]) => labels[k] + ": " + value(k, v))
+            .join("\n") || "État du mois conservé.",
+        )}</pre>`
+      : "";
+  return (
+    display("Avant", before) + display("Après", after) ||
+    "<span>Action enregistrée, sans donnée sensible.</span>"
+  );
+}
+function history() {
+  return (
+    heading(
+      "Chaque modification a une trace.",
+      "Retrouvez qui a modifié une journée, un contrat, un quota ou une validation.",
+      "",
+      "Historique",
+    ) +
+    `<section class="panel"><div class="panel-head"><div><h2>${state.user.role === "admin" ? "Historique de l’équipe" : "Mon historique"}</h2><p>Les mots de passe et leurs empreintes ne sont jamais enregistrés ici.</p></div></div>${!historyData ? empty("Chargement de l’historique…") : historyData.items.length ? `<div class="table-wrap"><table><thead><tr><th>Date et heure</th><th>Auteur</th><th>Collaborateur</th><th>Modification</th><th>Détail</th></tr></thead><tbody>${historyData.items.map((item) => `<tr><td>${esc(new Intl.DateTimeFormat("fr-CH", { dateStyle: "short", timeStyle: "short", timeZone: "Europe/Zurich" }).format(new Date(item.created_at)))}</td><td>${esc(item.actor || "Système")}</td><td>${esc(item.subject || "—")}</td><td class="note-cell">${esc(item.label)}</td><td><details class="audit-detail"><summary>Voir</summary>${auditDescription(item.before, item.after)}</details></td></tr>`).join("")}</tbody></table></div>` : empty("Aucune modification enregistrée pour le moment.", "history")}</section><div class="filters history-pagination"><button class="btn secondary" data-action="history-prev" ${historyOffset === 0 ? "disabled" : ""}>Précédent</button><span>Événements ${historyOffset + 1} à ${historyOffset + (historyData?.items.length || 0)}</span><button class="btn secondary" data-action="history-next" ${!historyData?.has_more ? "disabled" : ""}>Suivant</button></div>`
+  );
+}
+function validationControls(user) {
+  const lock = (state.locks || []).find(
+    (l) => l.user_id === user.id && l.month === month,
+  );
+  if (lock)
+    return `<span class="badge approved">${icon("shield")}Validé</span>${state.user.role === "admin" ? `<button class="link-button" data-action="reopen-month" data-user="${user.id}" data-month="${month}">Rouvrir</button>` : ""}`;
+  return `<span class="badge pending">Provisoire</span>${state.user.role === "admin" && month < state.today.slice(0, 7) ? `<button class="link-button" data-action="validate-month" data-user="${user.id}" data-month="${month}">Valider</button>` : ""}`;
+}
+function validateMonth(userId, period) {
+  const user = state.users.find((u) => String(u.id) === userId),
+    report = summary(user, period);
+  confirmation(
+    "Valider le mois ?",
+    `${user.name} · ${period}. Les saisies seront verrouillées. ${report.missing_days} journée(s) non renseignée(s) resteront comptées comme heures manquantes.`,
+    () => api("/api/validations/" + userId + "/" + period, "POST", {}),
+  );
+}
+function reopenMonth(userId, period) {
+  dialog(
+    "Rouvrir le mois",
+    "Les saisies redeviendront modifiables. Le motif sera conservé dans l’historique.",
+    '<label class="field">Motif<textarea name="reason" required minlength="3" maxlength="300"></textarea></label>',
+    "Rouvrir",
+    (b) => api("/api/validations/" + userId + "/" + period, "DELETE", b),
+  );
+}
+async function downloadPdf() {
+  const r = await fetch(
+    "/api/report/pdf?month=" +
+      month +
+      "&user=" +
+      (state.user.role === "admin" ? reportUser : state.user.id),
+  );
+  if (!r.ok) {
+    const b = await r.json();
+    throw new Error(b.error);
+  }
+  const blob = await r.blob(),
+    url = URL.createObjectURL(blob),
+    a = document.createElement("a");
+  a.href = url;
+  a.download = "Tempo-rapport-" + month + ".pdf";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast("Rapport PDF téléchargé.");
+}
+function contractDialog(id) {
+  const user = state.users.find((u) => u.id === Number(id)),
+    current =
+      scheduleFor(state.contracts || [], user.id, state.today) ||
+      (state.contracts || []).find((c) => c.user_id === user.id);
+  dialog(
+    "Contrat de travail",
+    esc(user.name) + " · Les modifications sont datées et historisées.",
+    `<div class="form-grid"><label class="field full">Date d’effet<input type="date" name="effective_from" value="${state.today}" min="2000-01-01" max="2100-12-31" required></label><div class="field full"><span>Heures prévues par journée (0 = repos)</span><div class="contract-days">${["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((day, i) => `<label>${day}<input type="number" name="day${i}" value="${(current?.schedule[i] || 0) / 60}" min="0" max="16" step="0.25" required></label>`).join("")}</div></div><label class="field full">Ajustement du solde, en heures<input type="number" name="opening_hours" value="${current?.effective_from === state.today ? current.opening_minutes / 60 : 0}" min="-10000" max="10000" step="0.25"><small>Crédit positif ou débit négatif appliqué à cette date. Laissez 0 pour un simple changement d’horaire.</small></label></div><p class="helper">Un contrat ne peut pas modifier une période déjà validée. Pour reprendre un ancien solde, renseignez-le comme ajustement à la date choisie.</p>`,
+    "Enregistrer le contrat",
+    (b) =>
+      api("/api/contracts/" + id, "POST", {
+        effective_from: b.effective_from,
+        opening_hours: Number(b.opening_hours),
+        schedule: Array.from({ length: 7 }, (_, i) =>
+          Math.round(Number(b["day" + i]) * 60),
+        ),
+      }),
+  );
+}
+function favoriteDialog() {
+  dialog(
+    "Créer un horaire favori",
+    "Réutilisez ce créneau dans vos saisies quotidiennes ou groupées.",
+    `<label class="field">Nom<input name="name" required maxlength="80" placeholder="Journée habituelle"></label><div class="form-grid"><label class="field">Arrivée<input type="time" name="start" value="08:00" required></label><label class="field">Départ<input type="time" name="end" value="17:00" required></label><label class="field full">Pause (minutes)<input type="number" name="break_minutes" min="0" max="720" value="60" required></label></div>`,
+    "Enregistrer le favori",
+    (b) =>
+      api("/api/favorites", "POST", {
+        ...b,
+        break_minutes: Number(b.break_minutes),
+      }),
+  );
+}
+function saveWeekDialog() {
+  dialog(
+    "Créer une semaine type",
+    "Choisissez les jours et les horaires de votre semaine habituelle.",
+    `<label class="field">Nom<input name="name" required maxlength="80" placeholder="Semaine habituelle"></label><div class="template-days">${["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((d, i) => `<div><label><input type="checkbox" name="enabled${i}" ${i < 5 ? "checked" : ""}>${d}</label><input type="time" aria-label="Arrivée ${d}" name="start${i}" value="08:00"><input type="time" aria-label="Départ ${d}" name="end${i}" value="17:00"><input type="number" aria-label="Pause ${d}" name="pause${i}" value="60" min="0" max="720"></div>`).join("")}</div>`,
+    "Enregistrer la semaine",
+    (b) =>
+      api("/api/week-templates", "POST", {
+        name: b.name,
+        pattern: Array.from({ length: 7 }, (_, i) => i)
+          .filter((i) => b["enabled" + i])
+          .map((i) => ({
+            weekday: i + 1,
+            start: b["start" + i],
+            end: b["end" + i],
+            break_minutes: Number(b["pause" + i]),
+          })),
+      }),
+  );
+}
+function batchDialog() {
+  const start = datesForWeek(selectedDate || state.today)[0];
+  dialog(
+    "Saisie rapide",
+    "Remplissez plusieurs journées réalisées. Les dates futures sont exclues.",
+    `<label class="field">Méthode<select name="method" id="batch-method"><option value="range">Même horaire sur une période</option><option value="copy">Copier une semaine renseignée</option>${(state.week_templates || []).map((t) => `<option value="template:${t.id}">Semaine type · ${esc(t.name)}</option>`).join("")}</select></label><div class="form-grid"><label class="field">Début / semaine cible<input type="date" name="start_date" value="${start}" max="${state.today}" required></label><label class="field">Fin de période<input type="date" name="end_date" value="${state.today}" max="${state.today}" required></label><label class="field full">Semaine source (pour la copie)<input type="date" name="source_date" value="${shiftDay(start, -7)}" max="${state.today}"></label><label class="field full">Horaire favori<select id="batch-favorite"><option value="">Horaire personnalisé</option>${(state.favorites || []).map((f) => `<option value="${f.id}">${esc(f.name)}</option>`).join("")}</select></label><label class="field">Arrivée<input type="time" name="start" value="08:00" required></label><label class="field">Départ<input type="time" name="end" value="17:00" required></label><label class="field full">Pause (minutes)<input type="number" name="break_minutes" value="60" min="0" max="720" required></label><div class="field full"><span>Jours concernés (pour la période)</span><div class="weekday-checks">${["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((d, i) => `<label><input type="checkbox" name="weekday${i}" ${i < 5 ? "checked" : ""}>${d}</label>`).join("")}</div></div><label class="field full">Note<textarea name="note" maxlength="500"></textarea></label></div><label class="checkbox-line"><input type="checkbox" name="replace_existing">Remplacer les journées déjà renseignées</label><p class="helper">Les mois verrouillés et les vacances approuvées sont toujours ignorés. Une semaine cible est alignée sur le lundi.</p>`,
+    "Remplir les journées",
+    async (b) => {
+      let entries = [];
+      const target = datesForWeek(b.start_date);
+      if (b.method === "copy") {
+        const source = datesForWeek(b.source_date);
+        entries = source
+          .map((d, i) => {
+            const e = myEntries().find((e) => e.date === d);
+            return e
+              ? {
+                  date: target[i],
+                  start: e.start,
+                  end: e.end,
+                  break_minutes: e.break_minutes,
+                  note: e.note,
+                }
+              : null;
+          })
+          .filter(Boolean);
+      } else if (b.method.startsWith("template:")) {
+        const template = state.week_templates.find(
+          (t) => t.id === Number(b.method.split(":")[1]),
+        );
+        entries = template.pattern.map((t) => ({
+          ...t,
+          date: target[t.weekday - 1],
+          note: b.note,
+        }));
+      } else {
+        if (b.end_date < b.start_date)
+          throw new Error("La fin doit suivre le début.");
+        let count = 0;
+        for (let d = b.start_date; d <= b.end_date; d = shiftDay(d, 1)) {
+          if (++count > 62) throw new Error("Maximum 62 jours par saisie.");
+          const i = (new Date(d).getUTCDay() + 6) % 7;
+          if (b["weekday" + i])
+            entries.push({
+              date: d,
+              start: b.start,
+              end: b.end,
+              break_minutes: Number(b.break_minutes),
+              note: b.note,
+            });
+        }
+      }
+      const future = entries.filter((e) => e.date > state.today).length;
+      entries = entries.filter((e) => e.date <= state.today);
+      if (!entries.length)
+        throw new Error("Aucune journée passée sélectionnée.");
+      const result = await api("/api/entries/batch", "POST", {
+        entries,
+        replace_existing: !!b.replace_existing,
+      });
+      return {
+        ...result,
+        message:
+          result.message +
+          (future ? " " + future + " date(s) à venir exclue(s)." : ""),
+      };
+    },
+  );
+  modal.querySelector("#batch-favorite").onchange = (e) => {
+    const f = state.favorites.find((f) => f.id === Number(e.target.value));
+    if (f)
+      for (const name of ["start", "end", "break_minutes"])
+        modal.querySelector(`[name="${name}"]`).value = f[name];
+  };
+}
+function quickTools() {
+  return `<section class="panel bottom-panel"><div class="panel-head"><div><h2>Vos raccourcis de saisie</h2><p>Favoris et semaines types restent liés à votre compte.</p></div><div class="actions"><button class="btn secondary small" data-action="favorite">${icon("plus")}Horaire favori</button><button class="btn secondary small" data-action="save-week">${icon("plus")}Semaine type</button></div></div><div class="quick-tools">${(state.favorites || []).map((f) => `<div><span><strong>${esc(f.name)}</strong><small>${f.start} — ${f.end} · ${f.break_minutes} min de pause</small></span><button class="link-button" data-action="delete-favorite" data-id="${f.id}" aria-label="Supprimer ${esc(f.name)}">${icon("trash")}</button></div>`).join("")}${(state.week_templates || []).map((t) => `<div><span><strong>${esc(t.name)}</strong><small>${t.pattern.length} jour(s) · semaine type</small></span><button class="link-button" data-action="delete-template" data-id="${t.id}" aria-label="Supprimer ${esc(t.name)}">${icon("trash")}</button></div>`).join("")}${!state.favorites?.length && !state.week_templates?.length ? '<p class="helper">Créez votre premier favori pour remplir vos journées plus rapidement.</p>' : ""}</div></section>`;
+}
+
 function myEntries() {
   return state.entries.filter((e) => e.user_id === state.user.id);
 }
@@ -213,11 +622,11 @@ function dashboard() {
       `<button class="btn" data-action="entry">${icon("plus")}Saisir mes heures</button>`,
       "Tableau de bord",
     ) +
-    `<div class="stats">${stat("Cette semaine", duration(weekTotal), "", `${week.length} jour${week.length > 1 ? "s" : ""} renseigné${week.length > 1 ? "s" : ""}`, "clock")}${stat("Ce mois-ci", duration(monthTotal), "", fmt(state.today, { month: "long", year: "numeric" }), "calendar")}${stat("Solde de vacances", decimal(b.remaining), "jours", `${decimal(b.used)} jours pris sur ${decimal(b.allowance)}`, "sun", true)}${stat("Demandes en attente", pending.length, "", pending.length ? "En cours de validation" : "Tout est à jour", "report")}</div><div class="dashboard-grid"><section class="panel"><div class="panel-head"><div><h2>Votre semaine en un coup d’œil</h2><p>${fmt(dates[0])} — ${fmt(dates[6])}</p></div><span class="legend"><i></i>Heures travaillées</span></div><div class="chart" role="img" aria-label="${esc(dates.map((d, i) => fmt(d, { weekday: "long" }) + ": " + decimal(values[i]) + " heures").join(", "))}"><div class="chart-axis"><span>${decimal(max)}h</span><span>${decimal(max / 2)}h</span><span>0h</span></div><div class="chart-plot">${values.map((v, i) => `<div class="bar-col"><span class="bar-value">${v ? decimal(v) + "h" : ""}</span><div class="bar" style="height:${(v / max) * 85}%"></div><span class="bar-day">${fmt(dates[i], { weekday: "short" })}</span></div>`).join("")}</div></div><div class="week-note">${icon("")}<span class="week-days">Temps net, pauses déduites · Objectif quotidien : ${decimal(state.user.daily_hours)}h</span></div></section><section class="panel balance-panel"><div class="panel-head"><div><h2>Un peu de temps pour vous.</h2><p>Votre solde annuel · ${state.today.slice(0, 4)}</p></div>${icon("sun")}</div><div class="balance-body"><div class="balance-number">${decimal(b.remaining)} <span>jours disponibles</span></div><div class="progress" role="progressbar" aria-label="Vacances utilisées" aria-valuenow="${b.used}" aria-valuemin="0" aria-valuemax="${b.allowance}"><div style="width:${b.allowance ? Math.min(100, (b.used / b.allowance) * 100) : 0}%"></div></div><div class="balance-details"><span>${decimal(b.used)} jours approuvés</span><span>${decimal(b.allowance)} jours / an</span></div><button class="btn" data-action="leave">${icon("plus")}Planifier mes vacances</button><p class="helper">${pending.reduce((a, l) => a + l.days, 0)} jour(s) en attente · Décompte du lundi au vendredi.</p></div></section></div><section class="panel bottom-panel"><div class="panel-head"><div><h2>Mes dernières saisies</h2><p>Chaque journée compte. Gardez-en une trace.</p></div><button class="link-button" data-page="hours">Tout voir →</button></div>${entries.length ? entryTable(entries, false) : empty("Votre première journée commence ici.<br>Saisissez vos heures pour suivre votre activité.")}</section>`
+    `<div class="stats">${stat("Cette semaine", duration(weekTotal), "", `${week.length} jour${week.length > 1 ? "s" : ""} renseigné${week.length > 1 ? "s" : ""}`, "clock")}${stat("Ce mois-ci", duration(monthTotal), "", fmt(state.today, { month: "long", year: "numeric" }), "calendar")}${stat("Solde de vacances", decimal(b.remaining), "jours", `${decimal(b.used)} jours pris sur ${decimal(b.allowance)}`, "sun", true)}${stat("Solde d’heures", signedDuration(ledger(state.user).minutes), "", ledger(state.user).missing_days ? ledger(state.user).missing_days + " jour(s) à compléter · provisoire" : "Selon votre contrat", "clock")}</div><div class="dashboard-grid"><section class="panel"><div class="panel-head"><div><h2>Votre semaine en un coup d’œil</h2><p>${fmt(dates[0])} — ${fmt(dates[6])}</p></div><span class="legend"><i></i>Heures travaillées</span></div><div class="chart" role="img" aria-label="${esc(dates.map((d, i) => fmt(d, { weekday: "long" }) + ": " + decimal(values[i]) + " heures").join(", "))}"><div class="chart-axis"><span>${decimal(max)}h</span><span>${decimal(max / 2)}h</span><span>0h</span></div><div class="chart-plot">${values.map((v, i) => `<div class="bar-col"><span class="bar-value">${v ? decimal(v) + "h" : ""}</span><div class="bar" style="height:${(v / max) * 85}%"></div><span class="bar-day">${fmt(dates[i], { weekday: "short" })}</span></div>`).join("")}</div></div><div class="week-note">${icon("")}<span class="week-days">Temps net, pauses déduites · Objectif quotidien : ${decimal(state.user.daily_hours)}h</span></div></section><section class="panel balance-panel"><div class="panel-head"><div><h2>Un peu de temps pour vous.</h2><p>Votre solde annuel · ${state.today.slice(0, 4)}</p></div>${icon("sun")}</div><div class="balance-body"><div class="balance-number">${decimal(b.remaining)} <span>jours disponibles</span></div><div class="progress" role="progressbar" aria-label="Vacances utilisées" aria-valuenow="${b.used}" aria-valuemin="0" aria-valuemax="${b.allowance}"><div style="width:${b.allowance ? Math.min(100, (b.used / b.allowance) * 100) : 0}%"></div></div><div class="balance-details"><span>${decimal(b.used)} jours approuvés</span><span>${decimal(b.allowance)} jours / an</span></div><button class="btn" data-action="leave">${icon("plus")}Planifier mes vacances</button><p class="helper">${pending.reduce((a, l) => a + l.days, 0)} jour(s) en attente · Décompte du lundi au vendredi.</p></div></section></div><section class="panel bottom-panel"><div class="panel-head"><div><h2>Mes dernières saisies</h2><p>Chaque journée compte. Gardez-en une trace.</p></div><button class="link-button" data-page="hours">Tout voir →</button></div>${entries.length ? entryTable(entries, false) : empty("Votre première journée commence ici.<br>Saisissez vos heures pour suivre votre activité.")}</section>`
   );
 }
 function entryTable(rows, actions = true) {
-  return `<div class="table-wrap"><table><thead><tr><th>Date</th><th>Arrivée</th><th>Départ</th><th>Pause</th><th>Temps net</th><th>Note</th>${actions ? "<th>Actions</th>" : ""}</tr></thead><tbody>${rows.map((e) => `<tr><td><strong>${fmt(e.date, { weekday: "short", day: "numeric", month: "short" })}</strong></td><td>${e.start}</td><td>${e.end}</td><td>${e.break_minutes} min</td><td><strong>${duration(mins(e))}</strong></td><td class="note-cell">${esc(e.note) || "—"}</td>${actions ? `<td><div class="actions"><button class="link-button" data-action="entry" data-id="${e.id}">Modifier</button><button class="btn small danger" data-action="delete-entry" data-id="${e.id}" aria-label="Supprimer la saisie du ${e.date}">${icon("trash")}</button></div></td>` : ""}</tr>`).join("")}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>Date</th><th>Arrivée</th><th>Départ</th><th>Pause</th><th>Temps net</th><th>Note</th>${actions ? "<th>Actions</th>" : ""}</tr></thead><tbody>${rows.map((e) => `<tr><td><strong>${fmt(e.date, { weekday: "short", day: "numeric", month: "short" })}</strong></td><td>${e.start}</td><td>${e.end}</td><td>${e.break_minutes} min</td><td><strong>${duration(mins(e))}</strong></td><td class="note-cell">${esc(e.note) || "—"}</td>${actions && isLocked(e.user_id, e.date) ? `<td><span class="badge approved">Verrouillé</span></td>` : actions ? `<td><div class="actions"><button class="link-button" data-action="entry" data-id="${e.id}">Modifier</button><button class="btn small danger" data-action="delete-entry" data-id="${e.id}" aria-label="Supprimer la saisie du ${e.date}">${icon("trash")}</button></div></td>` : ""}</tr>`).join("")}</tbody></table></div>`;
 }
 function monthFilter(extra = "") {
   return `<div class="filters"><label for="month">Période</label><input id="month" type="month" value="${month}" min="2000-01" max="2100-12">${extra}</div>`;
@@ -255,12 +664,17 @@ function hours() {
         : "",
       "Mes horaires",
     ) +
-    `<div class="hours-toolbar"><div class="view-switch" role="group" aria-label="Vue des horaires"><button data-action="hours-view" data-view="calendar" aria-pressed="${hoursView === "calendar"}" class="${hoursView === "calendar" ? "selected" : ""}">${icon("calendar")}Calendrier</button><button data-action="hours-view" data-view="list" aria-pressed="${hoursView === "list"}" class="${hoursView === "list" ? "selected" : ""}">${icon("report")}Liste</button></div>${selector}<button class="btn secondary" data-action="export-calendar">${icon("download")}Exporter le mois</button></div>` +
-    `<div class="stats calendar-stats">${stat("Heures travaillées", duration(data.minutes), "", "Temps net, pauses déduites", "clock")}${stat("Journées renseignées", rows.length, "jours", fmt(month + "-01", { month: "long", year: "numeric" }), "calendar")}${stat("Vacances approuvées", data.vacationDays, "jours", data.pendingDays ? data.pendingDays + " jour(s) en attente" : "Dans le mois sélectionné", "sun", true)}${stat("Moyenne par journée", rows.length ? duration(Math.round(data.minutes / rows.length)) : "—", "", "Sur les journées renseignées", "report")}</div>` +
-    (hoursView === "calendar"
-      ? calendarMonth(data, user)
-      : monthFilter() +
-        `<section class="panel"><div class="panel-head"><div><h2>Journal de travail</h2><p>${esc(user.name)} · ${fmt(month + "-01", { month: "long", year: "numeric" })}</p></div></div>${rows.length ? entryTable(rows, own) : empty("Aucune heure saisie pour ce mois.")}</section>`)
+    `<div class="hours-toolbar"><div class="view-switch" role="group" aria-label="Vue des horaires"><button data-action="hours-view" data-view="calendar" aria-pressed="${hoursView === "calendar"}" class="${hoursView === "calendar" ? "selected" : ""}">${icon("calendar")}Calendrier</button><button data-action="hours-view" data-view="list" aria-pressed="${hoursView === "list"}" class="${hoursView === "list" ? "selected" : ""}">${icon("report")}Liste</button><button data-action="hours-view" data-view="week" aria-pressed="${hoursView === "week"}" class="${hoursView === "week" ? "selected" : ""}">${icon("calendar")}Semaine</button><button data-action="hours-view" data-view="day" aria-pressed="${hoursView === "day"}" class="${hoursView === "day" ? "selected" : ""}">${icon("clock")}Jour</button></div>${selector}${own ? `<button class="btn secondary" data-action="batch">${icon("plus")}Saisie rapide</button>` : ""}<button class="btn secondary" data-action="export-calendar">${icon("download")}Exporter le mois</button></div>` +
+    `<div class="stats calendar-stats">${stat("Heures travaillées", duration(data.minutes), "", "Temps net, pauses déduites", "clock")}${stat("Journées renseignées", rows.length, "jours", fmt(month + "-01", { month: "long", year: "numeric" }), "calendar")}${stat("Vacances approuvées", data.vacationDays, "jours", data.pendingDays ? data.pendingDays + " jour(s) en attente" : "Dans le mois sélectionné", "sun", true)}${stat("Écart du mois", signedDuration(summary(user, month).delta_minutes), "", summary(user, month).locked ? "Mois validé" : summary(user, month).missing_days + " jour(s) à compléter · provisoire", "clock")}</div>` +
+    (hoursView === "week"
+      ? personalWeek(user)
+      : hoursView === "day"
+        ? dayView(user)
+        : hoursView === "calendar"
+          ? calendarMonth(data, user)
+          : monthFilter() +
+            `<section class="panel"><div class="panel-head"><div><h2>Journal de travail</h2><p>${esc(user.name)} · ${fmt(month + "-01", { month: "long", year: "numeric" })}</p></div></div>${rows.length ? entryTable(rows, own) : empty("Aucune heure saisie pour ce mois.")}</section>`) +
+    (own ? quickTools() : "")
   );
 }
 function calendarMonth(data, user) {
@@ -293,10 +707,17 @@ function selectedDayPanel(data, user) {
     : leave
       ? `<div class="day-illustration vacation">${icon("sun")}</div><h3>${leave.status === "approved" ? "Une pause bien méritée." : "Votre demande est en cours."}</h3><p class="day-description">${fmt(leave.start)} — ${fmt(leave.end)} · ${leave.days} jour(s)</p>${badge(leave.status)}`
       : `<div class="day-illustration">${icon(future ? "calendar" : "clock")}</div><h3>${future ? "Une journée à venir." : "Une journée à renseigner."}</h3><p class="day-description">${future ? "Planifiez vos vacances pour cette date. Les heures se saisissent après la journée de travail." : "Ajoutez vos heures de travail pour compléter votre calendrier."}</p>`;
-  let buttons = "";
-  if (own && !future && leave?.status !== "approved")
+  let buttons = isLocked(user.id, selectedDate)
+    ? `<p class="notice">${icon("shield")}Mois validé · saisies verrouillées</p>`
+    : "";
+  if (
+    own &&
+    !future &&
+    leave?.status !== "approved" &&
+    !isLocked(user.id, selectedDate)
+  )
     buttons = `<button class="btn" data-action="entry" ${e ? `data-id="${e.id}"` : ""} data-date="${selectedDate}">${icon(e ? "clock" : "plus")}${e ? "Modifier la journée" : "Saisir cette journée"}</button>${e ? `<button class="link-button delete-day" data-action="delete-entry" data-id="${e.id}">${icon("trash")}Supprimer la saisie</button>` : ""}`;
-  if (own && future && !leave)
+  if (own && future && !leave && !isLocked(user.id, selectedDate))
     buttons = `<button class="btn secondary" data-action="leave" data-date="${selectedDate}">${icon("sun")}Demander des vacances</button>`;
   if (leave?.status === "pending" && state.user.role === "admin")
     buttons += `<button class="btn secondary" data-page="leaves">Examiner la demande ${icon("arrow")}</button>`;
@@ -317,6 +738,13 @@ function calendarUpcoming(user) {
 function selectDay(date, focus = false) {
   if (date < "2000-01-01" || date > "2100-12-31") return;
   selectedDate = date;
+  if (hoursView !== "calendar") {
+    month = date.slice(0, 7);
+    calendarIndex = null;
+    renderContent();
+    if (focus) app.querySelector(`.calendar-day[data-date="${date}"]`)?.focus();
+    return;
+  }
   if (!date.startsWith(month)) {
     month = date.slice(0, 7);
     calendarIndex = null;
@@ -431,11 +859,11 @@ function reports() {
     heading(
       "Chaque mois, une vue claire.",
       "Un rapport fiable des heures déclarées et des congés approuvés.",
-      `<button class="btn" data-action="export-report">${icon("download")}Exporter le rapport`,
+      `<div class="heading-actions"><button class="btn secondary" data-action="pdf">${icon("report")}Rapport PDF</button><button class="btn" data-action="export-report">${icon("download")}Exporter le rapport</button></div>`,
       "Rapports mensuels",
     ) +
     monthFilter(userSelect()) +
-    `<div class="report-summary">${stat("Heures travaillées", duration(total), "", "Total net de la sélection", "clock")}${stat("Journées renseignées", count, "jours", "Chaque saisie compte pour une journée", "calendar")}${stat("Vacances approuvées", vacations, "jours", "Jours ouvrés de la période", "sun", true)}</div><section class="panel"><div class="panel-head"><div><h2>Synthèse · ${fmt(month + "-01", { month: "long", year: "numeric" })}</h2><p>Temps net et moyenne sur les journées renseignées.</p></div><span class="current-pill">${summary.length} collaborateur${summary.length > 1 ? "s" : ""}</span></div><div class="table-wrap"><table><thead><tr><th>Collaborateur</th><th>Jours saisis</th><th>Temps net</th><th>Pauses</th><th>Moyenne / jour</th><th>Vacances</th></tr></thead><tbody>${summary.map((r) => `<tr><td>${person(r.u)}</td><td>${r.rows.length}</td><td><strong>${duration(r.minutes)}</strong></td><td>${duration(r.pause)}</td><td>${r.rows.length ? duration(Math.round(r.minutes / r.rows.length)) : "—"}</td><td>${r.leaveDays} j</td></tr>`).join("")}</tbody></table></div></section>${summary.length === 1 ? `<section class="panel bottom-panel"><div class="panel-head"><div><h2>Détail des journées</h2><p>${esc(summary[0].u.name)}</p></div></div>${summary[0].rows.length ? entryTable(summary[0].rows, false) : empty("Aucune heure renseignée sur cette période.")}</section>` : ""}<p class="helper">L’export CSV comprend une synthèse par collaborateur et le détail des journées. Les jours sans saisie ne sont pas considérés comme des absences. Ces rapports décrivent le temps déclaré et ne constituent pas un calcul de paie.</p>`
+    `<div class="report-summary">${stat("Heures travaillées", duration(total), "", "Total net de la sélection", "clock")}${stat("Journées renseignées", count, "jours", "Chaque saisie compte pour une journée", "calendar")}${stat("Vacances approuvées", vacations, "jours", "Jours ouvrés de la période", "sun", true)}</div><section class="panel"><div class="panel-head"><div><h2>Synthèse · ${fmt(month + "-01", { month: "long", year: "numeric" })}</h2><p>Temps net et moyenne sur les journées renseignées.</p></div><span class="current-pill">${summary.length} collaborateur${summary.length > 1 ? "s" : ""}</span></div><div class="table-wrap"><table><thead><tr><th>Collaborateur</th><th>Jours saisis</th><th>Temps net</th><th>Pauses</th><th>Moyenne / jour</th><th>Vacances</th><th>Écart du mois</th><th>Validation</th></tr></thead><tbody>${summary.map((r) => `<tr><td>${person(r.u)}</td><td>${r.rows.length}</td><td><strong>${duration(r.minutes)}</strong></td><td>${duration(r.pause)}</td><td>${r.rows.length ? duration(Math.round(r.minutes / r.rows.length)) : "—"}</td><td>${r.leaveDays} j</td><td><strong>${signedDuration(windowSummary(r.u, month).delta_minutes)}</strong></td><td>${validationControls(r.u)}</td></tr>`).join("")}</tbody></table></div></section>${summary.length === 1 ? `<section class="panel bottom-panel"><div class="panel-head"><div><h2>Détail des journées</h2><p>${esc(summary[0].u.name)}</p></div></div>${summary[0].rows.length ? entryTable(summary[0].rows, false) : empty("Aucune heure renseignée sur cette période.")}</section>` : ""}<p class="helper">L’export CSV comprend une synthèse par collaborateur et le détail des journées. Les jours sans saisie ne sont pas considérés comme des absences. Ces rapports décrivent le temps déclaré et ne constituent pas un calcul de paie.</p>`
   );
 }
 function users() {
@@ -446,7 +874,7 @@ function users() {
       `<button class="btn" data-action="user">${icon("plus")}Ajouter un utilisateur`,
       "Administration",
     ) +
-    `<section class="panel"><div class="panel-head"><div><h2>Les membres de l’équipe</h2><p>${state.users.length} compte${state.users.length > 1 ? "s" : ""} · Les collaborateurs voient uniquement leurs heures et leurs demandes.</p></div></div><div class="table-wrap"><table><thead><tr><th>Collaborateur</th><th>E-mail</th><th>Rôle</th><th>Quota / an</th><th>Solde actuel</th><th>Objectif / jour</th><th>Actions</th></tr></thead><tbody>${state.users.map((u) => `<tr><td>${person(u, u.id === state.user.id ? "Vous" : "")}</td><td>${esc(u.email)}</td><td><span class="badge ${u.role === "admin" ? "approved" : ""}">${u.role === "admin" ? "Administrateur" : "Collaborateur"}</span></td><td>${decimal(u.allowance)} jours</td><td><strong>${decimal(u.vacation_balance.remaining)} jours</strong><br><small class="week-days">${decimal(u.vacation_balance.used)} approuvés · ${state.today.slice(0, 4)}</small></td><td>${decimal(u.daily_hours)}h</td><td><button class="link-button" data-action="user" data-id="${u.id}">Gérer le compte →</button></td></tr>`).join("")}</tbody></table></div></section><p class="helper">Un administrateur peut consulter les rapports de l’équipe, traiter les vacances et créer les comptes. Le quota annuel s’applique à chaque année, sans report automatique. Les mots de passe ne sont jamais affichés.</p>`
+    `<section class="panel"><div class="panel-head"><div><h2>Les membres de l’équipe</h2><p>${state.users.length} compte${state.users.length > 1 ? "s" : ""} · Les collaborateurs voient uniquement leurs heures et leurs demandes.</p></div></div><div class="table-wrap"><table><thead><tr><th>Collaborateur</th><th>E-mail</th><th>Rôle</th><th>Quota / an</th><th>Solde actuel</th><th>Contrat courant</th><th>Actions</th></tr></thead><tbody>${state.users.map((u) => `<tr><td>${person(u, u.id === state.user.id ? "Vous" : "")}</td><td>${esc(u.email)}</td><td><span class="badge ${u.role === "admin" ? "approved" : ""}">${u.role === "admin" ? "Administrateur" : "Collaborateur"}</span></td><td>${decimal(u.allowance)} jours</td><td><strong>${decimal(u.vacation_balance.remaining)} jours</strong><br><small class="week-days">${decimal(u.vacation_balance.used)} approuvés · ${state.today.slice(0, 4)}</small></td><td>${duration((scheduleFor(state.contracts || [], u.id, state.today)?.schedule || []).reduce((a, b) => a + b, 0))} / sem.</td><td><div class="actions"><button class="link-button" data-action="user" data-id="${u.id}">Compte</button><button class="link-button" data-action="contract" data-id="${u.id}">Contrat</button></div></td></tr>`).join("")}</tbody></table></div></section><p class="helper">Un administrateur peut consulter les rapports de l’équipe, traiter les vacances et créer les comptes. Le quota annuel s’applique à chaque année, sans report automatique. Les mots de passe ne sont jamais affichés.</p>`
   );
 }
 function dialog(
@@ -465,11 +893,12 @@ function dialog(
       btn = f.querySelector("[type=submit]");
     btn.disabled = true;
     try {
-      await handler(Object.fromEntries(new FormData(f)));
+      const result = await handler(Object.fromEntries(new FormData(f)));
       modal.close();
       if (closeApplication) return;
       await refresh();
-      toast("Enregistrement effectué.");
+      loadPage();
+      toast(result?.message || "Enregistrement effectué.");
     } catch (err) {
       f.querySelector(".error").textContent = err.message;
     } finally {
@@ -479,10 +908,14 @@ function dialog(
 }
 function entryDialog(id, date = state.today) {
   const e = id ? myEntries().find((x) => x.id === Number(id)) : null;
+  if (isLocked(state.user.id, e?.date || date)) {
+    toast("Ce mois est validé et verrouillé.", true);
+    return;
+  }
   dialog(
     e ? "Modifier la journée" : "Saisir mes heures",
     "Une saisie par jour. Les pauses sont déduites du temps travaillé.",
-    `<div class="form-grid"><label class="field full">Date<input type="date" name="date" required value="${e?.date || date}" max="${state.today}"></label><label class="field">Heure de début<input type="time" name="start" required value="${e?.start || "08:00"}"></label><label class="field">Heure de fin<input type="time" name="end" required value="${e?.end || "17:00"}"></label><label class="field full">Pause (minutes)<input type="number" name="break_minutes" min="0" max="720" step="1" required value="${e?.break_minutes ?? 60}"></label><label class="field full">Note facultative<textarea name="note" maxlength="500" placeholder="Projet, activité, précision…">${esc(e?.note || "")}</textarea></label></div>`,
+    `<div class="form-grid">${state.favorites?.length ? `<label class="field full">Horaire favori<select id="entry-favorite"><option value="">Horaire personnalisé</option>${state.favorites.map((f) => `<option value="${f.id}">${esc(f.name)}</option>`).join("")}</select></label>` : ""}<label class="field full">Date<input type="date" name="date" required ${e ? "readonly" : ""} value="${e?.date || date}" max="${state.today}"></label><label class="field">Heure de début<input type="time" name="start" required value="${e?.start || "08:00"}"></label><label class="field">Heure de fin<input type="time" name="end" required value="${e?.end || "17:00"}"></label><label class="field full">Pause (minutes)<input type="number" name="break_minutes" min="0" max="720" step="1" required value="${e?.break_minutes ?? 60}"></label><label class="field full">Note facultative<textarea name="note" maxlength="500" placeholder="Projet, activité, précision…">${esc(e?.note || "")}</textarea></label></div>`,
     "Enregistrer",
     (b) =>
       api("/api/entries", "POST", {
@@ -490,6 +923,14 @@ function entryDialog(id, date = state.today) {
         break_minutes: Number(b.break_minutes),
       }),
   );
+  const favorite = modal.querySelector("#entry-favorite");
+  if (favorite)
+    favorite.onchange = (e) => {
+      const f = state.favorites.find((f) => f.id === Number(e.target.value));
+      if (f)
+        for (const name of ["start", "end", "break_minutes"])
+          modal.querySelector(`[name="${name}"]`).value = f[name];
+    };
 }
 function leaveDialog(date = state.today) {
   const year = date.slice(0, 4);
@@ -631,13 +1072,106 @@ document.addEventListener("click", async (event) => {
   if (target.dataset.page) {
     page = target.dataset.page;
     render();
+    loadPage();
     return;
   }
   const { action, id } = target.dataset;
   try {
     switch (action) {
+      case "theme": {
+        const theme =
+          document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+        document.documentElement.dataset.theme = theme;
+        try {
+          localStorage.setItem("tempo-theme", theme);
+        } catch {}
+        render();
+        break;
+      }
+      case "batch":
+        batchDialog();
+        break;
+      case "favorite":
+        favoriteDialog();
+        break;
+      case "save-week":
+        saveWeekDialog();
+        break;
+      case "delete-favorite":
+        confirmation(
+          "Supprimer ce favori ?",
+          "Vos saisies existantes ne changent pas.",
+          () => api("/api/favorites/" + id, "DELETE"),
+        );
+        break;
+      case "delete-template":
+        confirmation(
+          "Supprimer cette semaine type ?",
+          "Les journées déjà saisies sont conservées.",
+          () => api("/api/week-templates/" + id, "DELETE"),
+        );
+        break;
+      case "contract":
+        contractDialog(id);
+        break;
+      case "pdf":
+        await downloadPdf();
+        break;
+      case "validate-month":
+        validateMonth(target.dataset.user, target.dataset.month);
+        break;
+      case "reopen-month":
+        reopenMonth(target.dataset.user, target.dataset.month);
+        break;
+      case "team-prev":
+        teamStart = shiftDay(teamStart, -7);
+        teamData = null;
+        renderContent();
+        loadPage();
+        break;
+      case "team-next":
+        teamStart = shiftDay(teamStart, 7);
+        teamData = null;
+        renderContent();
+        loadPage();
+        break;
+      case "team-today":
+        teamStart = datesForWeek(state.today)[0];
+        teamData = null;
+        renderContent();
+        loadPage();
+        break;
+      case "history-next":
+        historyOffset += 100;
+        historyData = null;
+        renderContent();
+        loadPage();
+        break;
+      case "history-prev":
+        historyOffset = Math.max(0, historyOffset - 100);
+        historyData = null;
+        renderContent();
+        loadPage();
+        break;
+      case "week-prev":
+        selectDay(shiftDay(selectedDate, -7));
+        renderContent();
+        break;
+      case "week-next":
+        selectDay(shiftDay(selectedDate, 7));
+        renderContent();
+        break;
+      case "day-prev":
+        selectDay(shiftDay(selectedDate, -1));
+        renderContent();
+        break;
+      case "day-next":
+        selectDay(shiftDay(selectedDate, 1));
+        renderContent();
+        break;
       case "refresh":
         await refresh();
+        loadPage();
         toast("Données actualisées.");
         break;
       case "menu":
@@ -779,6 +1313,10 @@ document.addEventListener("change", (event) => {
       renderContent();
     }
   }
+  if (event.target.id === "overtime-user") {
+    calendarUser = event.target.value;
+    renderContent();
+  }
   if (event.target.id === "calendar-user") {
     calendarUser = event.target.value;
     calendarIndex = null;
@@ -798,6 +1336,7 @@ document.addEventListener("dblclick", (event) => {
   )
     return;
   const data = calendarData();
+  if (isLocked(state.user.id, day.dataset.date)) return;
   if (data.periodsByDate.get(day.dataset.date)?.status === "approved") return;
   entryDialog(data.entriesByDate.get(day.dataset.date)?.id, day.dataset.date);
 });

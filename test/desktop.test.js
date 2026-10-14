@@ -92,7 +92,14 @@ test("Application portable : ressources, isolation locale, instance unique et fe
     await t.test(
       "Les ressources intégrées et la connexion locale fonctionnent",
       async () => {
-        for (const asset of ["/", "/app.js", "/calendar.js", "/style.css"]) {
+        for (const asset of [
+          "/",
+          "/app.js",
+          "/calendar.js",
+          "/metrics.js",
+          "/theme.js",
+          "/style.css",
+        ]) {
           const r = await fetch(base + asset);
           assert.equal(r.status, 200);
           assert.ok((await r.text()).length > 100);
@@ -174,6 +181,21 @@ test("Application portable : ressources, isolation locale, instance unique et fe
         const state = await request(base, "/api/state", "GET", null, admin);
         assert.equal(state.data.desktop, true);
         assert.equal(state.data.entries[0].note, "Test portable");
+      },
+    );
+    await t.test(
+      "Le PDF utilise le logo et la police de l’application portable",
+      async () => {
+        const state = await request(base, "/api/state", "GET", null, admin);
+        const response = await fetch(
+          base + "/api/report/pdf?month=" + state.data.today.slice(0, 7),
+          { headers: { Cookie: admin } },
+        );
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get("content-type"), "application/pdf");
+        const bytes = Buffer.from(await response.arrayBuffer());
+        assert.equal(bytes.subarray(0, 5).toString(), "%PDF-");
+        assert.ok(bytes.length > 20000);
       },
     );
     await t.test(

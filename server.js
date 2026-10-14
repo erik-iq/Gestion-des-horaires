@@ -1,3 +1,4 @@
+import { createFeatures } from "./features-server.js";
 import http from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -162,7 +163,7 @@ async function body(req) {
   let data = "";
   for await (const chunk of req) {
     data += chunk;
-    if (data.length > 20000) fail("Requête trop volumineuse.", 413);
+    if (data.length > 200000) fail("Requête trop volumineuse.", 413);
   }
   try {
     return JSON.parse(data || "{}");
@@ -177,6 +178,20 @@ function send(res, status, data) {
   });
   res.end(JSON.stringify(data));
 }
+const features = createFeatures(db, {
+  today,
+  fail,
+  date,
+  text,
+  number,
+  minutes,
+  body,
+  send,
+  asset: (name) =>
+    packaged
+      ? Buffer.from(getAsset(name))
+      : readFileSync(path.join(root, "public", name)),
+});
 function signIn(res, u) {
   const token = randomBytes(32).toString("hex");
   sessions.set(token, { id: u.id, expires: Date.now() + 86400000 });
@@ -213,6 +228,9 @@ const server = http.createServer(async (req, res) => {
         "/": "index.html",
         "/app.js": "app.js",
         "/calendar.js": "calendar.js",
+        "/metrics.js": "metrics.js",
+        "/theme.js": "theme.js",
+        "/assets/logo.png": "assets/logo.png",
         "/style.css": "style.css",
         ...(packaged ? { "/licences.txt": "licenses.txt" } : {}),
       };
@@ -220,13 +238,15 @@ const server = http.createServer(async (req, res) => {
       const f = files[p];
       res.writeHead(200, {
         "Cache-Control": "no-cache",
-        "Content-Type": f.endsWith(".js")
-          ? "text/javascript; charset=utf-8"
-          : f.endsWith(".css")
-            ? "text/css; charset=utf-8"
-            : f.endsWith(".txt")
-              ? "text/plain; charset=utf-8"
-              : "text/html; charset=utf-8",
+        "Content-Type": f.endsWith(".png")
+          ? "image/png"
+          : f.endsWith(".js")
+            ? "text/javascript; charset=utf-8"
+            : f.endsWith(".css")
+              ? "text/css; charset=utf-8"
+              : f.endsWith(".txt")
+                ? "text/plain; charset=utf-8"
+                : "text/html; charset=utf-8",
       });
       return res.end(
         method === "HEAD"
@@ -293,6 +313,7 @@ const server = http.createServer(async (req, res) => {
     }
     const u = db.prepare("SELECT * FROM users WHERE id=?").get(s.id);
     if (!u) fail("Veuillez vous connecter.", 401);
+    if (await features.handle(req, res, url, u)) return;
     if (p === "/api/desktop/quit" && method === "POST") {
       if (!desktop) fail("Route introuvable.", 404);
       admin(u);
@@ -326,10 +347,18 @@ const server = http.createServer(async (req, res) => {
       )
         fail("Le mot de passe actuel est incorrect.", 400);
       const c = credentials({ ...u, password: b.password });
-      db.prepare("UPDATE users SET password=? WHERE id=?").run(
-        c.password,
-        u.id,
-      );
+      features.atomic(() => {
+        db.prepare("UPDATE users SET password=? WHERE id=?").run(
+          c.password,
+          u.id,
+        );
+        features.audit(
+          u.id,
+          u.id,
+          "password.change",
+          "Modification du mot de passe",
+        );
+      });
       for (const [k, v] of sessions)
         if (v.id === u.id && k !== token) sessions.delete(k);
       return send(res, 200, { ok: true });
@@ -340,6 +369,7 @@ const server = http.createServer(async (req, res) => {
       const users = db.prepare("SELECT * FROM users ORDER BY name").all();
       return send(res, 200, {
         desktop,
+        ...features.supplement(u),
         user: safeUser(u),
         today: today(),
         users: users.map((x) =>
@@ -390,6 +420,7 @@ const server = http.createServer(async (req, res) => {
       if (!Number.isInteger(pause) || end <= start || end - start <= pause)
         fail("La fin doit suivre le début et dépasser la pause.");
       if (d > today()) fail("La saisie des heures futures est interdite.");
+      features.assertUnlocked(u.id, d);
       if (
         db
           .prepare(
@@ -398,9 +429,15 @@ const server = http.createServer(async (req, res) => {
           .get(u.id, d, d)
       )
         fail("Cette date correspond à des vacances approuvées.");
-      db.prepare(
-        "INSERT INTO entries(user_id,date,start,end,break_minutes,note) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,date) DO UPDATE SET start=excluded.start,end=excluded.end,break_minutes=excluded.break_minutes,note=excluded.note",
-      ).run(u.id, d, b.start, b.end, pause, text(b.note || ""));
+      features.atomic(() =>
+        features.writeEntry(u, {
+          date: d,
+          start: b.start,
+          end: b.end,
+          break_minutes: pause,
+          note: text(b.note || ""),
+        }),
+      );
       return send(res, 200, { ok: true });
     }
     const entryMatch = p.match(/^\/api\/entries\/(\d+)$/);
@@ -411,7 +448,18 @@ const server = http.createServer(async (req, res) => {
       if (!e) fail("Saisie introuvable.", 404);
       if (e.user_id !== u.id)
         fail("Vous ne pouvez supprimer que vos heures.", 403);
-      db.prepare("DELETE FROM entries WHERE id=?").run(e.id);
+      features.assertUnlocked(u.id, e.date);
+      features.atomic(() => {
+        db.prepare("DELETE FROM entries WHERE id=?").run(e.id);
+        features.audit(
+          u.id,
+          u.id,
+          "entry.delete",
+          "Suppression du " + e.date,
+          e,
+          null,
+        );
+      });
       return send(res, 200, { ok: true });
     }
     if (p === "/api/leaves" && method === "POST") {
@@ -422,6 +470,7 @@ const server = http.createServer(async (req, res) => {
         fail("Choisissez une période dans la même année.");
       if (start < today())
         fail("La demande doit commencer aujourd’hui ou plus tard.");
+      features.assertPeriodUnlocked(u.id, start, end);
       const days = daysBetween(start, end);
       if (!days) fail("La période doit inclure un jour ouvré.");
       if (
@@ -439,9 +488,24 @@ const server = http.createServer(async (req, res) => {
         .get(u.id, start.slice(0, 4)).days;
       if (days > balance(u.id, start.slice(0, 4)).remaining - pending)
         fail("Solde insuffisant, demandes en attente incluses.");
-      db.prepare(
-        "INSERT INTO leaves(user_id,start,end,days,note) VALUES(?,?,?,?,?)",
-      ).run(u.id, start, end, days, text(b.note || ""));
+      features.atomic(() => {
+        db.prepare(
+          "INSERT INTO leaves(user_id,start,end,days,note) VALUES(?,?,?,?,?)",
+        ).run(u.id, start, end, days, text(b.note || ""));
+        features.audit(
+          u.id,
+          u.id,
+          "leave.create",
+          "Demande de vacances",
+          null,
+          {
+            start,
+            end,
+            days,
+            note: text(b.note || ""),
+          },
+        );
+      });
       return send(res, 201, { ok: true });
     }
     const lm = p.match(/^\/api\/leaves\/(\d+)$/);
@@ -454,6 +518,7 @@ const server = http.createServer(async (req, res) => {
       if (!l) fail("Demande introuvable.", 404);
       if (l.status !== "pending")
         fail("Cette demande a déjà été traitée.", 409);
+      features.assertPeriodUnlocked(l.user_id, l.start, l.end);
       if (b.status === "approved") {
         if (l.days > balance(l.user_id, l.start.slice(0, 4)).remaining)
           fail("Solde de vacances insuffisant.");
@@ -468,7 +533,17 @@ const server = http.createServer(async (req, res) => {
             "Des heures existent sur cette période. Corrigez-les avant validation.",
           );
       }
-      db.prepare("UPDATE leaves SET status=? WHERE id=?").run(b.status, l.id);
+      features.atomic(() => {
+        db.prepare("UPDATE leaves SET status=? WHERE id=?").run(b.status, l.id);
+        features.audit(
+          u.id,
+          l.user_id,
+          "leave." + b.status,
+          "Vacances " + (b.status === "approved" ? "approuvées" : "refusées"),
+          l,
+          { ...l, status: b.status },
+        );
+      });
       return send(res, 200, { ok: true });
     }
     if (lm && method === "DELETE") {
@@ -476,7 +551,18 @@ const server = http.createServer(async (req, res) => {
       if (!l) fail("Demande introuvable.", 404);
       if (l.user_id !== u.id || l.status !== "pending")
         fail("Seule votre demande en attente peut être annulée.", 403);
-      db.prepare("DELETE FROM leaves WHERE id=?").run(l.id);
+      features.assertPeriodUnlocked(l.user_id, l.start, l.end);
+      features.atomic(() => {
+        db.prepare("DELETE FROM leaves WHERE id=?").run(l.id);
+        features.audit(
+          u.id,
+          l.user_id,
+          "leave.cancel",
+          "Annulation de vacances",
+          l,
+          null,
+        );
+      });
       return send(res, 200, { ok: true });
     }
     if (p === "/api/users" && method === "POST") {
@@ -486,16 +572,30 @@ const server = http.createServer(async (req, res) => {
       if (!["admin", "user"].includes(b.role)) fail("Rôle invalide.");
       if (db.prepare("SELECT id FROM users WHERE email=?").get(c.email))
         fail("Cette adresse e-mail existe déjà.", 409);
-      db.prepare(
-        "INSERT INTO users(name,email,password,role,allowance,daily_hours) VALUES(?,?,?,?,?,?)",
-      ).run(
-        c.name,
-        c.email,
-        c.password,
-        b.role,
-        number(b.allowance, 0, 365),
-        number(b.daily_hours, 1, 16),
-      );
+      features.atomic(() => {
+        db.prepare(
+          "INSERT INTO users(name,email,password,role,allowance,daily_hours) VALUES(?,?,?,?,?,?)",
+        ).run(
+          c.name,
+          c.email,
+          c.password,
+          b.role,
+          number(b.allowance, 0, 365),
+          number(b.daily_hours, 1, 16),
+        );
+        features.ensureContracts();
+        const created = db
+          .prepare("SELECT * FROM users WHERE email=?")
+          .get(c.email);
+        features.audit(
+          u.id,
+          created.id,
+          "user.create",
+          "Création du compte " + created.name,
+          null,
+          safeUser(created),
+        );
+      });
       return send(res, 201, { ok: true });
     }
     const um = p.match(/^\/api\/users\/(\d+)$/);
@@ -515,15 +615,37 @@ const server = http.createServer(async (req, res) => {
         .all(other.id);
       if (rows.some((x) => x.days > allowance))
         fail("Le quota ne peut être inférieur aux congés déjà approuvés.");
-      db.prepare(
-        "UPDATE users SET allowance=?,daily_hours=?,role=? WHERE id=?",
-      ).run(allowance, number(b.daily_hours, 1, 16), b.role, other.id);
-      if (b.password) {
-        const c = credentials({ ...other, password: b.password });
-        db.prepare("UPDATE users SET password=? WHERE id=?").run(
-          c.password,
+      const passwordUpdate = b.password
+        ? credentials({ ...other, password: b.password })
+        : null;
+      features.atomic(() => {
+        features.updateDailyHours(u.id, other, number(b.daily_hours, 1, 16));
+        db.prepare(
+          "UPDATE users SET allowance=?,daily_hours=?,role=? WHERE id=?",
+        ).run(allowance, number(b.daily_hours, 1, 16), b.role, other.id);
+        features.audit(
+          u.id,
           other.id,
+          "user.update",
+          "Modification du compte et du quota de vacances",
+          safeUser(other),
+          safeUser(db.prepare("SELECT * FROM users WHERE id=?").get(other.id)),
         );
+      });
+      if (b.password) {
+        const c = passwordUpdate;
+        features.atomic(() => {
+          db.prepare("UPDATE users SET password=? WHERE id=?").run(
+            c.password,
+            other.id,
+          );
+          features.audit(
+            u.id,
+            other.id,
+            "password.reset",
+            "Réinitialisation du mot de passe",
+          );
+        });
         for (const [k, v] of sessions)
           if (v.id === other.id) sessions.delete(k);
       }

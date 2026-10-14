@@ -2528,3 +2528,693 @@ dialog::backdrop {
     font-size: 13px;
   }
 }
+.company-logo {
+  width: 43px;
+  height: 43px;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 3px #64719f15);
+}
+.nav {
+  overflow-y: auto;
+  max-height: calc(100vh - 222px);
+  flex-shrink: 1;
+}
+.heading-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.hours-toolbar .view-switch {
+  flex-wrap: wrap;
+}
+.hours-toolbar > .btn {
+  margin-left: 0;
+}
+.personal-week .calendar-day {
+  min-height: 170px;
+}
+.week-detail {
+  max-width: 490px;
+  margin-top: 22px;
+}
+.day-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 22px;
+  align-items: start;
+}
+.day-view .notice {
+  margin: 0 23px 23px;
+}
+.contract-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+.contract-days label {
+  display: grid;
+  gap: 7px;
+  font-size: 10px;
+  text-align: center;
+}
+.contract-days input {
+  padding: 9px 3px;
+  text-align: center;
+}
+.weekday-checks {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.weekday-checks label,
+.checkbox-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.weekday-checks input,
+.checkbox-line input {
+  width: auto;
+}
+.template-days {
+  display: grid;
+  gap: 9px;
+}
+.template-days > div {
+  display: grid;
+  grid-template-columns: 68px 1fr 1fr 60px;
+  gap: 7px;
+  align-items: center;
+}
+.template-days label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+}
+.template-days input:not([type="checkbox"]) {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 8px 5px;
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+}
+.template-days label input {
+  margin: 0;
+}
+.quick-tools {
+  padding: 0 23px 22px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.quick-tools > div {
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.quick-tools strong {
+  display: block;
+  font-size: 11px;
+  color: #5e7295;
+}
+.quick-tools small {
+  display: block;
+  margin-top: 5px;
+  color: #8b9bb7;
+  font-size: 9px;
+}
+.team-week {
+  min-width: 950px;
+}
+.team-week th {
+  white-space: normal;
+  padding: 15px;
+  font-size: 10px;
+}
+.team-week td {
+  padding: 18px 15px;
+}
+.team-week td:first-child,
+.team-week th:first-child {
+  position: sticky;
+  left: 0;
+  background: #fff;
+  z-index: 1;
+  min-width: 170px;
+}
+.team-work {
+  display: grid;
+  gap: 6px;
+  background: #edf2fd;
+  border: 1px solid #e0e8f7;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 11px;
+  color: #657dac;
+}
+.team-work small {
+  font-size: 9px;
+  color: #8598bc;
+}
+.team-today {
+  background: #f7f9fe;
+}
+.team-empty {
+  color: #adb8cd;
+}
+.audit-detail {
+  min-width: 200px;
+  max-width: 430px;
+}
+.audit-detail summary {
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 11px;
+}
+.audit-detail pre {
+  font-size: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 350px;
+  color: #7484a2;
+  background: #f5f7fc;
+  padding: 12px;
+  border-radius: 8px;
+}
+.audit-detail strong {
+  font-size: 10px;
+  display: block;
+  margin: 10px 0 5px;
+}
+.history-pagination {
+  margin-top: 20px;
+  justify-content: flex-end;
+}
+.history-pagination span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.notice svg {
+  vertical-align: middle;
+  width: 14px;
+  height: 14px;
+  margin-right: 5px;
+}
+.report-total td {
+  font-weight: 650;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --accent: #adc1f5;
+  --muted: #a2aec6;
+  --line: #34415b;
+  color: #e2e9f8;
+  background: #121925;
+}
+[data-theme="dark"] body {
+  background: #121925;
+  color: #e2e9f8;
+}
+[data-theme="dark"] .sidebar {
+  background: linear-gradient(160deg, #1e2b41, #2b243a);
+  border-color: #405170;
+  color: #e2e9f8;
+}
+[data-theme="dark"] .brand small,
+[data-theme="dark"] .nav-label {
+  color: #a7b4d0;
+}
+[data-theme="dark"] .nav {
+  background: #1b2436;
+  border-color: #34415b;
+}
+[data-theme="dark"] .nav button {
+  color: #b7c4df;
+}
+[data-theme="dark"] .nav button svg {
+  color: #9aafd4;
+}
+[data-theme="dark"] .nav button.active {
+  background: linear-gradient(110deg, #304366, #3a304f);
+  border-color: #4a5c7c;
+  color: #e3eaff;
+}
+[data-theme="dark"] .nav button:hover {
+  background: #2b3a55;
+  color: #fff;
+}
+[data-theme="dark"] .sidebar-bottom {
+  border-color: #43506b;
+}
+[data-theme="dark"] .sidebar .avatar,
+[data-theme="dark"] .avatar {
+  background: linear-gradient(135deg, #334b70, #443651);
+  color: #d5e2ff;
+  border-color: #435978;
+}
+[data-theme="dark"] .sidebar .profile small,
+[data-theme="dark"] .logout {
+  color: #a9b9d6;
+}
+[data-theme="dark"] .topbar {
+  background: #192233;
+  border-color: #435375;
+}
+[data-theme="dark"] .breadcrumb,
+[data-theme="dark"] .date-chip {
+  color: #a0b1d0;
+}
+[data-theme="dark"] .breadcrumb b {
+  color: #d5e3fb;
+}
+[data-theme="dark"] .refresh-button,
+[data-theme="dark"] .icon-button {
+  background: #26334a;
+  border-color: #445471;
+  color: #bfd0f0;
+}
+[data-theme="dark"] .heading {
+  background: linear-gradient(115deg, #28405c, #36344e, #473147);
+  border-color: #514662;
+}
+[data-theme="dark"] .heading h1 {
+  color: #eff3ff;
+}
+[data-theme="dark"] .heading p,
+[data-theme="dark"] .eyebrow {
+  color: #bbcae5;
+}
+[data-theme="dark"] .btn {
+  background: #536fb3;
+  color: #fff;
+  box-shadow: none;
+}
+[data-theme="dark"] .btn:hover {
+  background: #607dc1;
+}
+[data-theme="dark"] .btn.secondary {
+  background: #26334c;
+  border-color: #455473;
+  color: #c0d1f0;
+}
+[data-theme="dark"] .btn.danger {
+  background: #4a2e3a;
+  color: #edc0c9;
+}
+[data-theme="dark"] .link-button {
+  color: #afc5f7;
+}
+[data-theme="dark"] .stat {
+  background: #1b263a;
+  border-color: #364662;
+}
+[data-theme="dark"] .stat .value {
+  color: #e3ecff;
+}
+[data-theme="dark"] .stat .label,
+[data-theme="dark"] .stat .sub,
+[data-theme="dark"] .stat .unit {
+  color: #aebdd7;
+}
+[data-theme="dark"] .stat-icon {
+  background: #2a3852;
+  border-color: #3c4d6c;
+  color: #c1cff0;
+}
+[data-theme="dark"] .stat.highlight {
+  background: linear-gradient(130deg, #30304a, #402c42);
+  border-color: #564568;
+}
+[data-theme="dark"] .stat.highlight .stat-icon {
+  background: #443654;
+  border-color: #655171;
+  color: #debedf;
+}
+[data-theme="dark"] .panel {
+  background:
+    linear-gradient(#1b2638, #1b2638) padding-box,
+    linear-gradient(130deg, #456d91, #625f92, #885d86, #8b7255) border-box;
+  box-shadow: none;
+}
+[data-theme="dark"] .panel-head h2,
+[data-theme="dark"] .person-card .profile strong {
+  color: #d5e3fd;
+}
+[data-theme="dark"] .panel-head p,
+[data-theme="dark"] .helper,
+[data-theme="dark"] .week-days,
+[data-theme="dark"] .week-note {
+  color: #a8b8d4;
+}
+[data-theme="dark"] .balance-panel {
+  background:
+    linear-gradient(125deg, #30344c, #402e45) padding-box,
+    linear-gradient(130deg, #547594, #775f87, #916f73) border-box;
+}
+[data-theme="dark"] .balance-number {
+  color: #d3c5ef;
+}
+[data-theme="dark"] .balance-number span,
+[data-theme="dark"] .balance-details {
+  color: #c2afd0;
+}
+[data-theme="dark"] .progress {
+  background: #49405b;
+}
+[data-theme="dark"] .balance-panel .btn {
+  background: #403a54;
+  border-color: #625872;
+  color: #e3cbea;
+}
+[data-theme="dark"] th {
+  background: #25314a;
+  color: #b0c0df;
+  border-color: #354561;
+}
+[data-theme="dark"] td {
+  color: #bbcae4;
+  border-color: #303d56;
+}
+[data-theme="dark"] td strong,
+[data-theme="dark"] td .profile strong {
+  color: #e0eaff;
+}
+[data-theme="dark"] .badge {
+  background: #303d54;
+  color: #c0cce2;
+}
+[data-theme="dark"] .badge.approved,
+[data-theme="dark"] .badge.recorded {
+  background: #293f60;
+  color: #b0caed;
+}
+[data-theme="dark"] .badge.leave {
+  background: #463049;
+  color: #dfb7d8;
+}
+[data-theme="dark"] .badge.pending {
+  background: #49402b;
+  color: #e0c791;
+}
+[data-theme="dark"] .badge.rejected {
+  background: #4a303b;
+  color: #e7bcc9;
+}
+[data-theme="dark"] .notice {
+  background: #26334b;
+  border-color: #425471;
+  color: #c1d0eb;
+}
+[data-theme="dark"] .field {
+  color: #bdcce6;
+}
+[data-theme="dark"] .field input,
+[data-theme="dark"] .field select,
+[data-theme="dark"] .field textarea,
+[data-theme="dark"] .filters input,
+[data-theme="dark"] .filters select,
+[data-theme="dark"] .calendar-person select {
+  background: #243147;
+  color: #e1eaff;
+  border-color: #425370;
+}
+[data-theme="dark"] .field small,
+[data-theme="dark"] .calendar-person {
+  color: #a9b9d6;
+}
+[data-theme="dark"] .view-switch {
+  background: #202d42;
+  border-color: #3c4d6a;
+}
+[data-theme="dark"] .view-switch button {
+  color: #aabada;
+}
+[data-theme="dark"] .view-switch button.selected {
+  background: #3a4c70;
+  color: #e1eaff;
+  box-shadow: none;
+}
+[data-theme="dark"] .calendar-head h2 {
+  color: #d6e4ff;
+}
+[data-theme="dark"] .calendar-legend,
+[data-theme="dark"] .calendar-hint {
+  color: #afbfdd;
+}
+[data-theme="dark"] .calendar-weekdays {
+  background: #25334d;
+  border-color: #364865;
+}
+[data-theme="dark"] .calendar-weekdays span {
+  color: #bccbe6;
+}
+[data-theme="dark"] .calendar-grid {
+  background: #1b2639;
+}
+[data-theme="dark"] .calendar-day {
+  background: #1c2a41;
+  border-color: #354563;
+}
+[data-theme="dark"] .calendar-day.weekend {
+  background: #19263b;
+}
+[data-theme="dark"] .calendar-day.outside {
+  background: #162238;
+}
+[data-theme="dark"] .calendar-day.selected {
+  background: #2b3f62;
+  box-shadow: inset 0 0 0 1.5px #8ca5d1;
+}
+[data-theme="dark"] .calendar-day:hover {
+  background: #2c3d5d;
+}
+[data-theme="dark"] .day-number {
+  color: #afc4e5;
+}
+[data-theme="dark"] .outside .day-number {
+  color: #6b7f9f;
+}
+[data-theme="dark"] .today .day-number {
+  background: #728dc7;
+  color: #fff;
+}
+[data-theme="dark"] .today-label {
+  color: #bacdeb;
+}
+[data-theme="dark"] .day-event.work,
+[data-theme="dark"] .team-work {
+  background: #2d436b;
+  border-color: #5475a8;
+  color: #bfd3f5;
+}
+[data-theme="dark"] .day-event.work strong,
+[data-theme="dark"] .day-event.work > span {
+  color: #c4d8ff;
+}
+[data-theme="dark"] .day-event.vacation {
+  background: #4b3655;
+  border-color: #916897;
+  color: #e5bfdc;
+}
+[data-theme="dark"] .day-event.pending {
+  background: #48402c;
+  border-color: #8b7853;
+  color: #e6cf9e;
+}
+[data-theme="dark"] .day-empty {
+  color: #9fb4d8;
+}
+[data-theme="dark"] .calendar-bottom {
+  background: #1d2a40;
+  color: #a4b7d7;
+}
+[data-theme="dark"] .day-panel-title {
+  background: linear-gradient(120deg, #293a58, #403148);
+  border-color: #41506e;
+}
+[data-theme="dark"] .day-panel-title h2 {
+  color: #d1e2ff;
+}
+[data-theme="dark"] .day-total strong {
+  color: #b7cdf8;
+}
+[data-theme="dark"] .day-total > span,
+[data-theme="dark"] .day-description,
+[data-theme="dark"] .day-note {
+  color: #b1c2df;
+}
+[data-theme="dark"] .day-details {
+  background: #2a3a57;
+  border-color: #3e506f;
+}
+[data-theme="dark"] .day-details > span {
+  color: #b4c5e4;
+}
+[data-theme="dark"] .day-details strong {
+  color: #d6e5ff;
+}
+[data-theme="dark"] .day-note {
+  background: #23314a;
+}
+[data-theme="dark"] .selected-day-body h3 {
+  color: #bdcdec;
+}
+[data-theme="dark"] .day-illustration {
+  background: linear-gradient(135deg, #2c4265, #443753);
+  color: #b2c7ef;
+}
+[data-theme="dark"] .day-illustration.vacation,
+[data-theme="dark"] .upcoming-icon {
+  background: #483751;
+  color: #d7b6d6;
+}
+[data-theme="dark"] .upcoming-items strong,
+[data-theme="dark"] .upcoming-panel .panel-head h2 {
+  color: #c1d2f1;
+}
+[data-theme="dark"] .upcoming-items small,
+[data-theme="dark"] .upcoming-empty,
+[data-theme="dark"] .upcoming-panel .panel-head p {
+  color: #a9bad7;
+}
+[data-theme="dark"] .quick-tools strong {
+  color: #c7d8f4;
+}
+[data-theme="dark"] .quick-tools small {
+  color: #a6b8d9;
+}
+[data-theme="dark"] .team-week td:first-child,
+[data-theme="dark"] .team-week th:first-child {
+  background: #1e2b41;
+}
+[data-theme="dark"] .team-today {
+  background: #283a59;
+}
+[data-theme="dark"] .audit-detail pre {
+  background: #25344c;
+  color: #c4d2ec;
+}
+[data-theme="dark"] .current-pill {
+  background: #28344b;
+  color: #becde8;
+  border-color: #455370;
+}
+[data-theme="dark"] dialog {
+  background: #1c293e;
+  color: #d1e0fc;
+  border-color: #496184;
+}
+[data-theme="dark"] .modal-head p {
+  color: #b5c7e6;
+}
+[data-theme="dark"] .close {
+  background: #324564;
+  color: #d1e0fc;
+}
+[data-theme="dark"] .error {
+  background: #4d2d3b;
+  color: #f2c5d0;
+}
+[data-theme="dark"] .report-total {
+  background: #263550;
+}
+[data-theme="dark"] .empty {
+  color: #a9bbd9;
+}
+[data-theme="dark"] .footer {
+  color: #91a4c7;
+}
+[data-theme="dark"] .auth-main {
+  background: #172234;
+}
+[data-theme="dark"] .auth-story {
+  background: linear-gradient(130deg, #293f5c, #38344f, #48314b);
+  color: #dce8ff;
+}
+[data-theme="dark"] .auth-copy h1,
+[data-theme="dark"] .auth-box h2 {
+  color: #e4edff;
+}
+[data-theme="dark"] .auth-copy h1 em {
+  color: #d3acd4;
+}
+[data-theme="dark"] .auth-copy p,
+[data-theme="dark"] .auth-copy .eyebrow {
+  color: #bdcee9;
+}
+[data-theme="dark"] .auth-chips span {
+  background: #ffffff0e;
+  border-color: #ffffff25;
+  color: #c7d4ef;
+}
+[data-theme="dark"] .chart-plot {
+  background: repeating-linear-gradient(
+    to top,
+    transparent,
+    transparent calc(25% - 1px),
+    #38465f calc(25% - 1px),
+    #38465f 25%
+  );
+}
+[data-theme="dark"] .bar {
+  background: #627cad;
+}
+[data-theme="dark"] .bar-col:last-child .bar {
+  background: #99b5e2;
+}
+[data-theme="dark"] .bar-value,
+[data-theme="dark"] .bar-day,
+[data-theme="dark"] .chart-axis {
+  color: #b5c6e5;
+}
+@media (max-width: 800px) {
+  .heading-actions .btn {
+    font-size: 10px;
+    padding: 10px;
+  }
+  .day-view {
+    grid-template-columns: 1fr;
+  }
+  .quick-tools {
+    grid-template-columns: 1fr;
+  }
+  .hours-toolbar .view-switch {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .hours-toolbar .view-switch button {
+    padding: 9px 10px;
+    font-size: 10px;
+  }
+  .personal-week .calendar-day {
+    min-height: 110px;
+  }
+  .contract-days {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .quick-tools .panel-head {
+    flex-wrap: wrap;
+  }
+  .panel-head:has(.actions) {
+    flex-wrap: wrap;
+  }
+}
+
+[data-theme="dark"] .month-jump input {
+  background: #26344d;
+  border-color: #465978;
+}
+[data-theme="dark"] .month-jump input::-webkit-calendar-picker-indicator {
+  opacity: 1;
+}
