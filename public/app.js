@@ -1,3 +1,9 @@
+import {
+  shiftMonth,
+  shiftDay,
+  indexCalendar,
+  entryMinutes,
+} from "./calendar.js";
 const app = document.querySelector("#app"),
   modal = document.querySelector("#modal");
 const icons = {
@@ -15,6 +21,8 @@ const icons = {
   logout: '<path d="M9 4H4v16h5m6-12 4 4-4 4M9 12h10"/>',
   menu: '<path d="M3 6h18M3 12h18M3 18h18"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
+  chevronLeft: '<path d="m14 6-6 6 6 6"/>',
+  chevronRight: '<path d="m10 6 6 6-6 6"/>',
   trash: '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>',
 };
 const icon = (k) =>
@@ -34,8 +42,13 @@ const initials = (n) =>
     .map((x) => x[0])
     .join("")
     .toUpperCase();
-const fmt = (d, options = { day: "2-digit", month: "short" }) =>
-  new Intl.DateTimeFormat("fr-CH", options).format(new Date(d + "T12:00:00"));
+const formatters = new Map();
+const fmt = (d, options = { day: "2-digit", month: "short" }) => {
+  const key = JSON.stringify(options);
+  if (!formatters.has(key))
+    formatters.set(key, new Intl.DateTimeFormat("fr-CH", options));
+  return formatters.get(key).format(new Date(d + "T12:00:00"));
+};
 const decimal = (n) =>
   Number(n).toLocaleString("fr-CH", { maximumFractionDigits: 1 });
 const mins = (e) => {
@@ -55,12 +68,16 @@ const labels = {
 const badge = (status) =>
   `<span class="badge ${status}"><i></i>${labels[status]}</span>`;
 const brand = () =>
-  `<div class="brand"><span class="brand-mark">ıı</span><div>tempo<small>Le temps, simplement.</small></div></div>`;
+  `<div class="brand"><span class="brand-mark">t</span><div>tempo<small>Le temps, simplement.</small></div></div>`;
 let state,
   page = "dashboard",
   month = "",
   reportUser = "",
-  toastTimer;
+  toastTimer,
+  hoursView = "calendar",
+  selectedDate = "",
+  calendarUser = "",
+  calendarIndex = null;
 async function api(url, method = "GET", data) {
   const r = await fetch(url, {
     method,
@@ -115,6 +132,10 @@ async function refresh() {
   if (state.user.role !== "admin" && page === "users") page = "dashboard";
   if (!month) month = state.today.slice(0, 7);
   if (!reportUser) reportUser = String(state.user.id);
+  calendarIndex = null;
+  if (!calendarUser || !state.users.some((u) => String(u.id) === calendarUser))
+    calendarUser = String(state.user.id);
+  if (!selectedDate) selectedDate = state.today;
   render();
 }
 function navItem(key, title, k) {
@@ -143,8 +164,17 @@ function heading(
 function stat(label, value, unit, sub, k, highlight = false) {
   return `<div class="stat ${highlight ? "highlight" : ""}"><span class="stat-icon">${icon(k)}</span><p class="label">${label}</p><div class="value">${value}<span class="unit">${unit}</span></div><p class="sub">${sub}</p></div>`;
 }
+function renderContent() {
+  const content = app.querySelector(".content");
+  if (!content) return render();
+  content.innerHTML =
+    { dashboard, hours, leaves, attendance, reports, users }[page]() + footer();
+}
+function footer() {
+  return `<footer class="footer"><span>Tempo · Votre temps, en clair.${state.desktop ? " · Données locales" : ""}</span><span>Votre espace ${state.user.role === "admin" ? "administrateur" : "collaborateur"}</span></footer>`;
+}
 function render() {
-  app.innerHTML = `<div class="shell"><aside class="sidebar">${brand()}<div class="nav-label">Espace personnel</div><nav class="nav" aria-label="Navigation principale">${navItem("dashboard", "Vue d’ensemble", "grid")}${navItem("hours", "Mes horaires", "clock")}${navItem("leaves", "Vacances", "sun")}${navItem("attendance", "Présence", "people")}${navItem("reports", "Rapports mensuels", "report")}${state.user.role === "admin" ? `<div class="nav-label">Administration</div>${navItem("users", "Utilisateurs", "people")}` : ""}</nav><div class="sidebar-bottom">${person(state.user, state.user.role === "admin" ? "Administrateur" : "Collaborateur")}<button class="logout" data-action="logout">${icon("logout")}Se déconnecter</button></div></aside><main class="main"><header class="topbar"><div class="breadcrumb"><button class="mobile-menu" data-action="menu" aria-label="Ouvrir le menu">${icon("menu")}</button><span>Mon espace /</span><b>${pageTitles[page]}</b></div><div class="topbar-right">${state.desktop && state.user.role === "admin" ? `<button class="refresh-button" data-action="quit" title="Quitter Tempo" aria-label="Quitter Tempo">${icon("logout")}</button>` : ""}<button class="refresh-button" data-action="refresh" title="Actualiser les données" aria-label="Actualiser les données">${icon("arrow")}</button><span class="date-chip">${icon("calendar")}${fmt(state.today, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</span><button class="avatar account-button" data-action="account" aria-label="Mon compte : ${esc(state.user.name)}" title="Mon compte">${esc(initials(state.user.name))}</button></div></header><div class="content">${{ dashboard: dashboard, hours: hours, leaves: leaves, attendance: attendance, reports: reports, users: users }[page]()}<footer class="footer"><span>Tempo · Le temps, simplement.${state.desktop ? " · Données locales" : ""}</span><span>Données privées · Espace ${state.user.role === "admin" ? "administrateur" : "collaborateur"}</span></footer></div></main></div>`;
+  app.innerHTML = `<div class="shell"><aside class="sidebar">${brand()}<div class="nav-label">Espace personnel</div><nav class="nav" aria-label="Navigation principale">${navItem("dashboard", "Vue d’ensemble", "grid")}${navItem("hours", "Mes horaires", "calendar")}${navItem("leaves", "Vacances", "sun")}${navItem("attendance", "Présence", "people")}${navItem("reports", "Rapports mensuels", "report")}${state.user.role === "admin" ? `<div class="nav-label">Administration</div>${navItem("users", "Utilisateurs", "people")}` : ""}</nav><div class="sidebar-bottom">${person(state.user, state.user.role === "admin" ? "Administrateur" : "Collaborateur")}<button class="logout" data-action="logout">${icon("logout")}Se déconnecter</button></div></aside><main class="main"><header class="topbar"><div class="breadcrumb"><button class="mobile-menu" data-action="menu" aria-label="Ouvrir le menu">${icon("menu")}</button><span>Mon espace /</span><b>${pageTitles[page]}</b></div><div class="topbar-right">${state.desktop && state.user.role === "admin" ? `<button class="refresh-button" data-action="quit" title="Quitter Tempo" aria-label="Quitter Tempo">${icon("logout")}</button>` : ""}<button class="refresh-button" data-action="refresh" title="Actualiser les données" aria-label="Actualiser les données">${icon("arrow")}</button><span class="date-chip">${icon("calendar")}${fmt(state.today, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</span><button class="avatar account-button" data-action="account" aria-label="Mon compte : ${esc(state.user.name)}" title="Mon compte">${esc(initials(state.user.name))}</button></div></header><div class="content">${{ dashboard: dashboard, hours: hours, leaves: leaves, attendance: attendance, reports: reports, users: users }[page]()}${footer()}</div></main></div>`;
 }
 function myEntries() {
   return state.entries.filter((e) => e.user_id === state.user.id);
@@ -192,18 +222,132 @@ function entryTable(rows, actions = true) {
 function monthFilter(extra = "") {
   return `<div class="filters"><label for="month">Période</label><input id="month" type="month" value="${month}" min="2000-01" max="2100-12">${extra}</div>`;
 }
+function selectedCalendarUser() {
+  return state.user.role === "admin"
+    ? state.users.find((u) => String(u.id) === calendarUser) || state.user
+    : state.user;
+}
+function calendarData() {
+  const user = selectedCalendarUser();
+  const key = month + ":" + user.id;
+  if (!calendarIndex || calendarIndex.key !== key)
+    calendarIndex = {
+      key,
+      ...indexCalendar(state.entries, state.leaves, user.id, month),
+    };
+  return calendarIndex;
+}
 function hours() {
-  const rows = myEntries().filter((e) => e.date.startsWith(month)),
-    total = rows.reduce((a, e) => a + mins(e), 0);
+  const user = selectedCalendarUser(),
+    own = user.id === state.user.id;
+  const data = calendarData(),
+    rows = data.monthlyEntries;
+  const selector =
+    state.user.role === "admin"
+      ? `<label class="calendar-person"><span>Collaborateur</span><select id="calendar-user" aria-label="Calendrier du collaborateur">${state.users.map((u) => `<option value="${u.id}" ${u.id === user.id ? "selected" : ""}>${esc(u.name)}${u.id === state.user.id ? " · moi" : ""}</option>`).join("")}</select></label>`
+      : "";
   return (
     heading(
+      "Votre temps, en clair.",
+      "Retrouvez vos journées de travail et vos vacances dans un seul calendrier.",
+      own
+        ? `<button class="btn" data-action="entry">${icon("plus")}Saisir mes heures</button>`
+        : "",
       "Mes horaires",
-      "Une journée, une saisie. Suivez vos heures en toute simplicité.",
-      `<button class="btn" data-action="entry">${icon("plus")}Saisir mes heures</button>`,
     ) +
-    monthFilter() +
-    `<div class="stats">${stat("Temps travaillé", duration(total), "", "Pauses déduites", "clock")}${stat("Jours renseignés", rows.length, "jours", fmt(month + "-01", { month: "long", year: "numeric" }), "calendar")}${stat("Moyenne quotidienne", rows.length ? duration(Math.round(total / rows.length)) : "—", "", "Sur les jours renseignés", "report")}${stat("Pauses cumulées", duration(rows.reduce((a, e) => a + e.break_minutes, 0)), "", "Non comptées comme travail", "sun")}</div><section class="panel"><div class="panel-head"><div><h2>Journal de travail</h2><p>${fmt(month + "-01", { month: "long", year: "numeric" })}</p></div><button class="btn secondary small" data-action="export-hours">${icon("download")}Exporter</button></div>${rows.length ? entryTable(rows) : empty("Aucune heure saisie pour ce mois.")} </section><p class="helper">Les journées sont saisies avec une heure de début, une heure de fin et une pause. Une nouvelle saisie pour la même date remplace la précédente. Les horaires passant minuit doivent être répartis sur deux journées.</p>`
+    `<div class="hours-toolbar"><div class="view-switch" role="group" aria-label="Vue des horaires"><button data-action="hours-view" data-view="calendar" aria-pressed="${hoursView === "calendar"}" class="${hoursView === "calendar" ? "selected" : ""}">${icon("calendar")}Calendrier</button><button data-action="hours-view" data-view="list" aria-pressed="${hoursView === "list"}" class="${hoursView === "list" ? "selected" : ""}">${icon("report")}Liste</button></div>${selector}<button class="btn secondary" data-action="export-calendar">${icon("download")}Exporter le mois</button></div>` +
+    `<div class="stats calendar-stats">${stat("Heures travaillées", duration(data.minutes), "", "Temps net, pauses déduites", "clock")}${stat("Journées renseignées", rows.length, "jours", fmt(month + "-01", { month: "long", year: "numeric" }), "calendar")}${stat("Vacances approuvées", data.vacationDays, "jours", data.pendingDays ? data.pendingDays + " jour(s) en attente" : "Dans le mois sélectionné", "sun", true)}${stat("Moyenne par journée", rows.length ? duration(Math.round(data.minutes / rows.length)) : "—", "", "Sur les journées renseignées", "report")}</div>` +
+    (hoursView === "calendar"
+      ? calendarMonth(data, user)
+      : monthFilter() +
+        `<section class="panel"><div class="panel-head"><div><h2>Journal de travail</h2><p>${esc(user.name)} · ${fmt(month + "-01", { month: "long", year: "numeric" })}</p></div></div>${rows.length ? entryTable(rows, own) : empty("Aucune heure saisie pour ce mois.")}</section>`)
   );
+}
+function calendarMonth(data, user) {
+  return `<div class="calendar-layout"><section class="panel calendar-panel" aria-label="Calendrier mensuel"><div class="calendar-head"><div><span class="eyebrow">Votre calendrier</span><h2>${fmt(month + "-01", { month: "long", year: "numeric" })}</h2></div><div class="month-navigation"><button class="icon-button" data-action="month-prev" aria-label="Mois précédent">${icon("chevronLeft")}</button><button class="btn secondary small" data-action="month-today">Aujourd’hui</button><button class="icon-button" data-action="month-next" aria-label="Mois suivant">${icon("chevronRight")}</button><label class="month-jump"><span class="visually-hidden">Choisir le mois</span><input id="month" type="month" value="${month}" min="2000-01" max="2100-12" aria-label="Choisir le mois"></label></div></div><div class="calendar-legend"><span><i class="work"></i>Travail</span><span><i class="vacation"></i>Vacances</span><span><i class="pending"></i>En attente</span><span class="calendar-hint">Cliquez sur une journée pour la gérer</span></div><div class="calendar-weekdays">${["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((x) => `<span>${x}</span>`).join("")}</div><div class="calendar-grid">${data.dates.map((day) => calendarCell(day, data)).join("")}</div><div class="calendar-bottom"><span>${icon("check")}Vos heures et vos congés au même endroit</span><span>Double-clic : saisie rapide</span></div></section><aside class="calendar-aside">${selectedDayPanel(data, user)}${calendarUpcoming(user)}</aside></div>`;
+}
+function calendarCell(day, data) {
+  const e = data.entriesByDate.get(day.date),
+    leave = data.periodsByDate.get(day.date),
+    active = day.date === selectedDate,
+    today = day.date === state.today;
+  const status = e
+    ? duration(entryMinutes(e)) + " de travail"
+    : leave
+      ? labels[leave.status] + " — vacances"
+      : "Aucune saisie";
+  return `<button class="calendar-day ${day.inMonth ? "" : "outside"} ${day.weekend ? "weekend" : ""} ${active ? "selected" : ""} ${today ? "today" : ""}" data-action="select-day" data-date="${day.date}" aria-label="${esc(fmt(day.date, { weekday: "long", day: "numeric", month: "long", year: "numeric" }) + ", " + status)}" aria-pressed="${active}" tabindex="${active ? 0 : -1}"><span class="day-top"><span class="day-number">${Number(day.date.slice(-2))}</span>${today ? '<span class="today-label">Aujourd’hui</span>' : ""}</span>${e ? `<span class="day-event work"><strong>${duration(entryMinutes(e))}</strong><span>${e.start} – ${e.end}</span></span>` : ""}${leave ? `<span class="day-event ${leave.status === "approved" ? "vacation" : "pending"}">${icon("sun")}<span>${leave.status === "approved" ? "Vacances" : "Demande"}</span></span>` : ""}${!e && !leave && day.inMonth && !day.weekend && day.date <= state.today ? '<span class="day-empty">Ajouter des heures</span>' : ""}</button>`;
+}
+function selectedDayPanel(data, user) {
+  const e = data.entriesByDate.get(selectedDate),
+    leave = data.periodsByDate.get(selectedDate),
+    own = user.id === state.user.id,
+    future = selectedDate > state.today;
+  const title = fmt(selectedDate, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  let detail = e
+    ? `<div class="day-total"><strong>${duration(entryMinutes(e))}</strong><span>heures travaillées</span></div><div class="day-details"><span>Arrivée<strong>${e.start}</strong></span><span>Départ<strong>${e.end}</strong></span><span>Pause<strong>${e.break_minutes} min</strong></span></div>${e.note ? `<p class="day-note">${esc(e.note)}</p>` : ""}`
+    : leave
+      ? `<div class="day-illustration vacation">${icon("sun")}</div><h3>${leave.status === "approved" ? "Une pause bien méritée." : "Votre demande est en cours."}</h3><p class="day-description">${fmt(leave.start)} — ${fmt(leave.end)} · ${leave.days} jour(s)</p>${badge(leave.status)}`
+      : `<div class="day-illustration">${icon(future ? "calendar" : "clock")}</div><h3>${future ? "Une journée à venir." : "Une journée à renseigner."}</h3><p class="day-description">${future ? "Planifiez vos vacances pour cette date. Les heures se saisissent après la journée de travail." : "Ajoutez vos heures de travail pour compléter votre calendrier."}</p>`;
+  let buttons = "";
+  if (own && !future && leave?.status !== "approved")
+    buttons = `<button class="btn" data-action="entry" ${e ? `data-id="${e.id}"` : ""} data-date="${selectedDate}">${icon(e ? "clock" : "plus")}${e ? "Modifier la journée" : "Saisir cette journée"}</button>${e ? `<button class="link-button delete-day" data-action="delete-entry" data-id="${e.id}">${icon("trash")}Supprimer la saisie</button>` : ""}`;
+  if (own && future && !leave)
+    buttons = `<button class="btn secondary" data-action="leave" data-date="${selectedDate}">${icon("sun")}Demander des vacances</button>`;
+  if (leave?.status === "pending" && state.user.role === "admin")
+    buttons += `<button class="btn secondary" data-page="leaves">Examiner la demande ${icon("arrow")}</button>`;
+  return `<section class="panel selected-day-panel"><div class="day-panel-title"><span class="eyebrow">Journée sélectionnée</span><h2>${title}</h2>${user.id !== state.user.id ? `<p>${esc(user.name)}</p>` : ""}</div><div class="selected-day-body">${detail}<div class="day-panel-actions">${buttons}</div></div></section>`;
+}
+function calendarUpcoming(user) {
+  const next = state.leaves
+    .filter(
+      (l) =>
+        l.user_id === user.id &&
+        l.status !== "rejected" &&
+        l.end >= state.today,
+    )
+    .sort((a, b) => a.start.localeCompare(b.start))
+    .slice(0, 2);
+  return `<section class="panel upcoming-panel"><div class="panel-head"><div><h2>Prochaines vacances</h2><p>Une pause se prépare.</p></div>${icon("sun")}</div>${next.length ? `<div class="upcoming-items">${next.map((l) => `<div><span class="upcoming-icon">${icon("sun")}</span><div><strong>${fmt(l.start)} — ${fmt(l.end)}</strong><small>${l.days} jour(s) · ${labels[l.status]}</small></div></div>`).join("")}</div>` : '<p class="upcoming-empty">Aucune période planifiée pour le moment.</p>'}</section>`;
+}
+function selectDay(date, focus = false) {
+  if (date < "2000-01-01" || date > "2100-12-31") return;
+  selectedDate = date;
+  if (!date.startsWith(month)) {
+    month = date.slice(0, 7);
+    calendarIndex = null;
+    renderContent();
+  } else {
+    for (const day of app.querySelectorAll(".calendar-day")) {
+      const active = day.dataset.date === date;
+      day.classList.toggle("selected", active);
+      day.setAttribute("aria-pressed", String(active));
+      day.tabIndex = active ? 0 : -1;
+    }
+    const panel = app.querySelector(".selected-day-panel");
+    if (panel)
+      panel.outerHTML = selectedDayPanel(
+        calendarData(),
+        selectedCalendarUser(),
+      );
+  }
+  if (focus)
+    app
+      .querySelector(`.calendar-day[data-date="${date}"]`)
+      ?.focus({ preventScroll: true });
+}
+function changeMonth(offset) {
+  const next = shiftMonth(month, offset);
+  if (next < "2000-01" || next > "2100-12") return;
+  month = next;
+  selectedDate =
+    month === state.today.slice(0, 7) ? state.today : month + "-01";
+  calendarIndex = null;
+  renderContent();
 }
 function leaves() {
   const admin = state.user.role === "admin",
@@ -333,12 +477,12 @@ function dialog(
     }
   });
 }
-function entryDialog(id) {
+function entryDialog(id, date = state.today) {
   const e = id ? myEntries().find((x) => x.id === Number(id)) : null;
   dialog(
     e ? "Modifier la journée" : "Saisir mes heures",
     "Une saisie par jour. Les pauses sont déduites du temps travaillé.",
-    `<div class="form-grid"><label class="field full">Date<input type="date" name="date" required value="${e?.date || state.today}" max="${state.today}"></label><label class="field">Heure de début<input type="time" name="start" required value="${e?.start || "08:00"}"></label><label class="field">Heure de fin<input type="time" name="end" required value="${e?.end || "17:00"}"></label><label class="field full">Pause (minutes)<input type="number" name="break_minutes" min="0" max="720" step="1" required value="${e?.break_minutes ?? 60}"></label><label class="field full">Note facultative<textarea name="note" maxlength="500" placeholder="Projet, activité, précision…">${esc(e?.note || "")}</textarea></label></div>`,
+    `<div class="form-grid"><label class="field full">Date<input type="date" name="date" required value="${e?.date || date}" max="${state.today}"></label><label class="field">Heure de début<input type="time" name="start" required value="${e?.start || "08:00"}"></label><label class="field">Heure de fin<input type="time" name="end" required value="${e?.end || "17:00"}"></label><label class="field full">Pause (minutes)<input type="number" name="break_minutes" min="0" max="720" step="1" required value="${e?.break_minutes ?? 60}"></label><label class="field full">Note facultative<textarea name="note" maxlength="500" placeholder="Projet, activité, précision…">${esc(e?.note || "")}</textarea></label></div>`,
     "Enregistrer",
     (b) =>
       api("/api/entries", "POST", {
@@ -347,11 +491,21 @@ function entryDialog(id) {
       }),
   );
 }
-function leaveDialog() {
+function leaveDialog(date = state.today) {
+  const year = date.slice(0, 4);
+  const used = state.leaves
+    .filter(
+      (l) =>
+        l.user_id === state.user.id &&
+        l.status === "approved" &&
+        l.start.startsWith(year),
+    )
+    .reduce((n, l) => n + l.days, 0);
+  const remaining = state.user.allowance - used;
   dialog(
     "Un peu de temps pour vous.",
     "Votre demande sera transmise à un administrateur.",
-    `<div class="form-grid"><label class="field">Premier jour<input type="date" name="start" required min="${state.today}" value="${state.today}"></label><label class="field">Dernier jour inclus<input type="date" name="end" required min="${state.today}" value="${state.today}"></label><label class="field full">Note facultative<textarea name="note" maxlength="500" placeholder="Une précision pour votre équipe…"></textarea></label></div><p class="helper">Jours entiers, du lundi au vendredi. Les jours fériés sont inclus. Solde actuel : ${decimal(state.balance.remaining)} jours (${state.today.slice(0, 4)}).</p>`,
+    `<div class="form-grid"><label class="field">Premier jour<input type="date" name="start" required min="${state.today}" value="${date}"></label><label class="field">Dernier jour inclus<input type="date" name="end" required min="${state.today}" value="${date}"></label><label class="field full">Note facultative<textarea name="note" maxlength="500" placeholder="Une précision pour votre équipe…"></textarea></label></div><p class="helper">Jours entiers, du lundi au vendredi. Les jours fériés sont inclus. Solde actuel : ${decimal(remaining)} jours (${year}).</p>`,
     "Envoyer la demande",
     (b) => api("/api/leaves", "POST", b),
   );
@@ -493,10 +647,10 @@ document.addEventListener("click", async (event) => {
         modal.close();
         break;
       case "entry":
-        entryDialog(id);
+        entryDialog(id, target.dataset.date || state.today);
         break;
       case "leave":
-        leaveDialog();
+        leaveDialog(target.dataset.date || state.today);
         break;
       case "user":
         userDialog(id);
@@ -521,6 +675,9 @@ document.addEventListener("click", async (event) => {
         await api("/api/logout", "POST", {});
         state = null;
         month = "";
+        selectedDate = "";
+        calendarUser = "";
+        calendarIndex = null;
         reportUser = "";
         page = "dashboard";
         auth(false);
@@ -554,6 +711,52 @@ document.addEventListener("click", async (event) => {
             }),
         );
         break;
+      case "select-day":
+        selectDay(target.dataset.date);
+        break;
+      case "month-prev":
+        changeMonth(-1);
+        break;
+      case "month-next":
+        changeMonth(1);
+        break;
+      case "month-today":
+        month = state.today.slice(0, 7);
+        selectedDate = state.today;
+        calendarIndex = null;
+        renderContent();
+        break;
+      case "hours-view":
+        hoursView = target.dataset.view;
+        renderContent();
+        break;
+      case "export-calendar": {
+        const user = selectedCalendarUser();
+        csvDownload(
+          [
+            [
+              "Collaborateur",
+              "Date",
+              "Début",
+              "Fin",
+              "Pause (min)",
+              "Temps net (min)",
+              "Note",
+            ],
+            ...calendarData().monthlyEntries.map((e) => [
+              user.name,
+              e.date,
+              e.start,
+              e.end,
+              e.break_minutes,
+              entryMinutes(e),
+              e.note,
+            ]),
+          ],
+          `tempo-horaires-${month}.csv`,
+        );
+        break;
+      }
       case "export-hours":
         exportHours();
         break;
@@ -570,12 +773,41 @@ document.addEventListener("change", (event) => {
     const v = event.target.value;
     if (/^\d{4}-\d{2}$/.test(v) && v >= "2000-01" && v <= "2100-12") {
       month = v;
-      render();
+      selectedDate =
+        month === state.today.slice(0, 7) ? state.today : month + "-01";
+      calendarIndex = null;
+      renderContent();
     }
+  }
+  if (event.target.id === "calendar-user") {
+    calendarUser = event.target.value;
+    calendarIndex = null;
+    renderContent();
   }
   if (event.target.id === "report-user") {
     reportUser = event.target.value;
     render();
+  }
+});
+document.addEventListener("dblclick", (event) => {
+  const day = event.target.closest(".calendar-day");
+  if (
+    !day ||
+    selectedCalendarUser().id !== state.user.id ||
+    day.dataset.date > state.today
+  )
+    return;
+  const data = calendarData();
+  if (data.periodsByDate.get(day.dataset.date)?.status === "approved") return;
+  entryDialog(data.entriesByDate.get(day.dataset.date)?.id, day.dataset.date);
+});
+document.addEventListener("keydown", (event) => {
+  const day = event.target.closest(".calendar-day");
+  if (!day) return;
+  const offsets = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+  if (event.key in offsets) {
+    event.preventDefault();
+    selectDay(shiftDay(day.dataset.date, offsets[event.key]), true);
   }
 });
 modal.addEventListener("click", (e) => {

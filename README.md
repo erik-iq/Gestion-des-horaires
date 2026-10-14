@@ -2,6 +2,24 @@
 
 Application web en français pour suivre les heures de travail, les vacances et la présence d’une équipe. Interface adaptée aux ordinateurs et aux téléphones, stockage SQLite persistant, serveur Node.js sans dépendance externe.
 
+## Nouveautés de la version 1.1
+
+- **Nouveau thème clair**, inspiré d’IQ Brain : fond gris, navigation claire, cartes blanches arrondies et accents pastel bleu, violet et rose.
+- **Calendrier mensuel** dans « Mes horaires » : heures, temps net, vacances approuvées et demandes en attente. Navigation entre les mois, retour à aujourd’hui et sélection d’un mois précis.
+- Cliquez sur une date pour voir son détail. **Double-cliquez** sur une date passée ou aujourd’hui pour saisir ou modifier vos heures. Les flèches du clavier permettent aussi de changer de journée.
+- Une date future permet de préparer une demande de vacances. Les heures futures ne sont pas enregistrables.
+- Les administrateurs peuvent consulter le calendrier d’un collaborateur ; chacun continue à modifier uniquement ses propres heures. La vue liste et l’export mensuel restent disponibles.
+- Les jours de vacances se comptent toujours du lundi au vendredi. Les week-ends inclus dans une période de vacances sont affichés, sans être ajoutés au décompte.
+- Navigation plus fluide : sélection d’une date sans recharger toute la page, données du calendrier indexées, formats de dates réutilisés, index SQLite ajoutés et ressources Windows minifiées.
+
+### Mettre à jour votre application existante
+
+1. Dans l’ancienne application, cliquez sur **Quitter Tempo** et confirmez. Fermer seulement l’onglet du navigateur ne suffit pas.
+2. Téléchargez le nouveau ZIP et extrayez-le. Remplacez votre ancien `Tempo.exe` par le nouveau, ou ouvrez-le depuis le nouveau dossier.
+3. Double-cliquez sur `Tempo.exe`, puis reconnectez-vous avec vos identifiants habituels.
+
+Le dossier **`%LOCALAPPDATA%\Tempo`** reste identique. Vos comptes, horaires et vacances sont conservés ; ne supprimez pas ce dossier. La mise à jour n’ajoute aucune donnée de démonstration à votre base.
+
 ## Tester l’application Windows sans installation
 
 La version portable est destinée à **Windows 10/11 x64**.
@@ -68,7 +86,7 @@ Les tests utilisent une base temporaire séparée et ne modifient pas les donné
 ## Fonctions
 
 - **Tableau de bord** : heures de la semaine et du mois, graphique hebdomadaire, dernières saisies et solde annuel.
-- **Horaires** : arrivée, départ, pause et note ; modification et suppression de ses propres journées ; export CSV.
+- **Horaires** : calendrier mensuel et vue liste, arrivée, départ, pause et note ; modification et suppression de ses propres journées ; export CSV.
 - **Vacances** : demandes, annulation des demandes en attente, approbation ou refus par un administrateur. Le solde est automatiquement déduit lors de l’approbation.
 - **Présence** : tableau partagé de l’équipe pour le jour courant, avec heures déclarées, vacances approuvées ou journée non renseignée.
 - **Rapports mensuels** : synthèse et détail personnel ; sélection d’un collaborateur ou de toute l’équipe pour les administrateurs ; téléchargement CSV compatible avec les tableurs.

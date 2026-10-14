@@ -43,7 +43,10 @@ const db = new DatabaseSync(location);
 db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;
 CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,name TEXT NOT NULL,email TEXT NOT NULL UNIQUE,password TEXT NOT NULL,role TEXT NOT NULL CHECK(role IN ('admin','user')),allowance REAL NOT NULL DEFAULT 25,daily_hours REAL NOT NULL DEFAULT 8);
 CREATE TABLE IF NOT EXISTS entries(id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id),date TEXT NOT NULL,start TEXT NOT NULL,end TEXT NOT NULL,break_minutes INTEGER NOT NULL,note TEXT NOT NULL DEFAULT '',UNIQUE(user_id,date));
-CREATE TABLE IF NOT EXISTS leaves(id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id),start TEXT NOT NULL,end TEXT NOT NULL,days INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'pending',note TEXT NOT NULL DEFAULT '');`);
+CREATE TABLE IF NOT EXISTS leaves(id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id),start TEXT NOT NULL,end TEXT NOT NULL,days INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'pending',note TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date DESC);
+CREATE INDEX IF NOT EXISTS idx_leaves_user_period ON leaves(user_id,start,end);
+CREATE INDEX IF NOT EXISTS idx_leaves_status_period ON leaves(status,start,end);`);
 const sessions = new Map(),
   attempts = new Map();
 const safeUser = (u) => ({
@@ -209,12 +212,14 @@ const server = http.createServer(async (req, res) => {
       const files = {
         "/": "index.html",
         "/app.js": "app.js",
+        "/calendar.js": "calendar.js",
         "/style.css": "style.css",
         ...(packaged ? { "/licences.txt": "licenses.txt" } : {}),
       };
       if (!files[p]) fail("Page introuvable.", 404);
       const f = files[p];
       res.writeHead(200, {
+        "Cache-Control": "no-cache",
         "Content-Type": f.endsWith(".js")
           ? "text/javascript; charset=utf-8"
           : f.endsWith(".css")

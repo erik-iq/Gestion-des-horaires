@@ -92,7 +92,7 @@ test("Application portable : ressources, isolation locale, instance unique et fe
     await t.test(
       "Les ressources intégrées et la connexion locale fonctionnent",
       async () => {
-        for (const asset of ["/", "/app.js", "/style.css"]) {
+        for (const asset of ["/", "/app.js", "/calendar.js", "/style.css"]) {
           const r = await fetch(base + asset);
           assert.equal(r.status, 200);
           assert.ok((await r.text()).length > 100);
@@ -248,6 +248,77 @@ test("Application portable : ressources, isolation locale, instance unique et fe
         }
       },
     );
+  } finally {
+    if (app.child.exitCode === null) app.child.kill();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Mise à jour : une base de la première version conserve ses comptes et ses horaires", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "tempo-upgrade-"));
+  const dbPath = path.join(dir, "horaires.sqlite");
+  const { DatabaseSync } = await import("node:sqlite");
+  const { scryptSync } = await import("node:crypto");
+  const legacy = new DatabaseSync(dbPath);
+  legacy.exec(`CREATE TABLE users(id INTEGER PRIMARY KEY,name TEXT NOT NULL,email TEXT NOT NULL UNIQUE,password TEXT NOT NULL,role TEXT NOT NULL,allowance REAL NOT NULL DEFAULT 25,daily_hours REAL NOT NULL DEFAULT 8);
+CREATE TABLE entries(id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id),date TEXT NOT NULL,start TEXT NOT NULL,end TEXT NOT NULL,break_minutes INTEGER NOT NULL,note TEXT NOT NULL DEFAULT '',UNIQUE(user_id,date));
+CREATE TABLE leaves(id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id),start TEXT NOT NULL,end TEXT NOT NULL,days INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'pending',note TEXT NOT NULL DEFAULT '');`);
+  const salt = "0123456789abcdef0123456789abcdef";
+  const hash =
+    salt + ":" + scryptSync("Legacy-Test-123", salt, 64).toString("hex");
+  legacy
+    .prepare("INSERT INTO users VALUES(1,?,?,?,'admin',25,8)")
+    .run("Compte existant", "legacy@example.ch", hash);
+  const today = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Zurich",
+  }).format(new Date());
+  legacy
+    .prepare("INSERT INTO entries VALUES(1,1,?,?,?,?,?)")
+    .run(
+      today,
+      "08:00",
+      "17:00",
+      60,
+      "Donnée enregistrée avant la mise à jour",
+    );
+  legacy.close();
+  const app = launch(dbPath);
+  try {
+    const { base } = await app.ready;
+    assert.equal(
+      (await request(base, "/api/status")).data.setupRequired,
+      false,
+    );
+    const login = await request(base, "/api/login", "POST", {
+      email: "legacy@example.ch",
+      password: "Legacy-Test-123",
+    });
+    assert.equal(login.r.status, 200);
+    const state = await request(base, "/api/state", "GET", null, login.cookie);
+    assert.equal(state.data.user.name, "Compte existant");
+    assert.equal(state.data.user.allowance, 25);
+    assert.equal(state.data.entries.length, 1);
+    assert.equal(
+      state.data.entries[0].note,
+      "Donnée enregistrée avant la mise à jour",
+    );
+    const exited = new Promise((resolve) => app.child.once("exit", resolve));
+    await request(base, "/api/desktop/quit", "POST", {}, login.cookie);
+    assert.equal(await exited, 0);
+    const persisted = new DatabaseSync(dbPath);
+    assert.equal(
+      persisted.prepare("SELECT COUNT(*) AS count FROM users").get().count,
+      1,
+    );
+    assert.equal(
+      persisted
+        .prepare(
+          "SELECT COUNT(*) AS count FROM sqlite_master WHERE type=? AND name LIKE ?",
+        )
+        .get("index", "idx_%").count,
+      3,
+    );
+    persisted.close();
   } finally {
     if (app.child.exitCode === null) app.child.kill();
     rmSync(dir, { recursive: true, force: true });

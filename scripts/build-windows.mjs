@@ -1,4 +1,4 @@
-import { build } from "esbuild";
+import { build, transform } from "esbuild";
 import { inject } from "postject";
 import { readFile, writeFile, mkdir, copyFile, chmod } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -10,6 +10,9 @@ import { fileURLToPath } from "node:url";
 const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const version = process.versions.node;
+const appVersion = JSON.parse(
+  await readFile(path.join(root, "package.json"), "utf8"),
+).version;
 if (Number(version.split(".")[0]) < 24)
   throw new Error("Node.js 24 ou supérieur est requis.");
 const dist = path.join(root, "dist");
@@ -81,6 +84,23 @@ await build({
 });
 const blob = path.join(cache, "tempo.blob");
 const config = path.join(cache, "sea.json");
+const assetsDirectory = path.join(cache, "assets");
+await mkdir(assetsDirectory, { recursive: true });
+const frontendFiles = ["index.html", "app.js", "calendar.js", "style.css"];
+for (const name of frontendFiles) {
+  const source = await readFile(path.join(root, "public", name), "utf8");
+  const contents =
+    name.endsWith(".js") || name.endsWith(".css")
+      ? (
+          await transform(source, {
+            loader: name.endsWith(".css") ? "css" : "js",
+            minify: true,
+            target: "es2022",
+          })
+        ).code
+      : source;
+  await writeFile(path.join(assetsDirectory, name), contents);
+}
 await writeFile(
   config,
   JSON.stringify(
@@ -92,9 +112,9 @@ await writeFile(
       useCodeCache: false,
       execArgvExtension: "none",
       assets: Object.fromEntries([
-        ...["index.html", "app.js", "style.css"].map((name) => [
+        ...frontendFiles.map((name) => [
           name,
-          path.join(root, "public", name),
+          path.join(assetsDirectory, name),
         ]),
         ["licenses.txt", path.join(cache, "LICENSE")],
       ]),
@@ -130,7 +150,7 @@ await copyFile(
 );
 await writeFile(
   path.join(dist, "LISEZ-MOI.txt"),
-  `TEMPO — Application Windows portable\r\n\r\n1. Extraire ce ZIP puis double-cliquer sur Tempo.exe. Aucun logiciel supplémentaire à installer.\r\n2. L'interface s'ouvre dans votre navigateur. Créer votre premier compte administrateur.\r\n3. Saisir vos heures et gérer vos vacances et utilisateurs.\r\n4. Utiliser « Quitter Tempo » dans l'application pour l'arrêter complètement.\r\n\r\nCompatible avec Windows 10/11, processeur x64.\r\nDonnées : %LOCALAPPDATA%\\Tempo\\horaires.sqlite\r\nLes données sont locales à votre compte Windows. Plusieurs PC ne synchronisent pas leurs données.\r\nPour sauvegarder, quitter Tempo et copier tout le dossier %LOCALAPPDATA%\\Tempo.\r\n\r\nCette version n'est pas signée avec un certificat éditeur. Une alerte Windows est possible.\r\nNe désactivez pas votre antivirus. Le fichier SHA256SUMS.txt permet de contrôler son intégrité.\r\n\r\nL'interface s'ouvre dans le navigateur : le service fonctionne uniquement sur votre ordinateur.\r\nNode.js ${version} est intégré ; ses licences sont incluses dans LICENSE-Node.txt et dans l'application.\r\n`,
+  `TEMPO ${appVersion} — Application Windows portable\r\n\r\n1. Extraire ce ZIP puis double-cliquer sur Tempo.exe. Aucun logiciel supplémentaire à installer.\r\n2. L'interface s'ouvre dans votre navigateur. Connectez-vous, ou créez votre premier compte lors d'une nouvelle utilisation.\r\n3. Saisir vos heures et gérer vos vacances et utilisateurs.\r\n4. Mes horaires affiche le calendrier. Cliquez sur une date pour son détail ; double-cliquez pour saisir ou modifier.\r\n5. Utiliser « Quitter Tempo » dans l'application pour l'arrêter complètement.\r\n\r\nMISE À JOUR : quittez d'abord l'ancienne version, puis ouvrez le nouveau Tempo.exe. Ne supprimez pas %LOCALAPPDATA%\\Tempo : vos comptes et vos données sont conservés.\r\n\r\nCompatible avec Windows 10/11, processeur x64.\r\nDonnées : %LOCALAPPDATA%\\Tempo\\horaires.sqlite\r\nLes données sont locales à votre compte Windows. Plusieurs PC ne synchronisent pas leurs données.\r\nPour sauvegarder, quitter Tempo et copier tout le dossier %LOCALAPPDATA%\\Tempo.\r\n\r\nCette version n'est pas signée avec un certificat éditeur. Une alerte Windows est possible.\r\nNe désactivez pas votre antivirus. Le fichier SHA256SUMS.txt permet de contrôler son intégrité.\r\n\r\nL'interface s'ouvre dans le navigateur : le service fonctionne uniquement sur votre ordinateur.\r\nNode.js ${version} est intégré ; ses licences sont incluses dans LICENSE-Node.txt et dans l'application.\r\n`,
 );
 const zipName = "Tempo-Windows-x64.zip";
 await exec("zip", [
