@@ -48,10 +48,30 @@ export function indexCalendar(entries, leaves, userId, month) {
   const dates = monthDays(month);
   const leavesByDate = new Map();
   const periodsByDate = new Map();
+  const absencesByDate = new Map();
   for (const l of leaves) {
     if (l.user_id !== userId || l.status === "rejected") continue;
     for (const day of dates)
       if (day.date >= l.start && day.date <= l.end) {
+        let absences = absencesByDate.get(day.date) || [];
+        const overlap = (other) =>
+          !other.portion ||
+          other.portion === "full" ||
+          !l.portion ||
+          l.portion === "full" ||
+          other.portion === l.portion;
+        if (
+          l.status === "pending" &&
+          absences.some(
+            (other) => other.status === "approved" && overlap(other),
+          )
+        )
+          continue;
+        if (l.status === "approved")
+          absences = absences.filter(
+            (other) => other.status !== "pending" || !overlap(other),
+          );
+        absencesByDate.set(day.date, [...absences, l]);
         const current = periodsByDate.get(day.date);
         if (!current || l.status === "approved") {
           periodsByDate.set(day.date, l);
@@ -67,13 +87,37 @@ export function indexCalendar(entries, leaves, userId, month) {
     entriesByDate,
     leavesByDate,
     periodsByDate,
+    absencesByDate,
     monthlyEntries,
     minutes: monthlyEntries.reduce((n, e) => n + entryMinutes(e), 0),
-    vacationDays: dates.filter(
-      (d) => d.inMonth && leavesByDate.get(d.date)?.status === "approved",
-    ).length,
-    pendingDays: dates.filter(
-      (d) => d.inMonth && leavesByDate.get(d.date)?.status === "pending",
-    ).length,
+    vacationDays: dates
+      .filter((d) => d.inMonth && !d.weekend)
+      .reduce(
+        (n, d) =>
+          n +
+          (absencesByDate.get(d.date) || [])
+            .filter(
+              (l) =>
+                l.status === "approved" && (!l.kind || l.kind === "vacation"),
+            )
+            .reduce(
+              (n, l) => n + (!l.portion || l.portion === "full" ? 1 : 0.5),
+              0,
+            ),
+        0,
+      ),
+    pendingDays: dates
+      .filter((d) => d.inMonth && !d.weekend)
+      .reduce(
+        (n, d) =>
+          n +
+          (absencesByDate.get(d.date) || [])
+            .filter((l) => l.status === "pending")
+            .reduce(
+              (n, l) => n + (!l.portion || l.portion === "full" ? 1 : 0.5),
+              0,
+            ),
+        0,
+      ),
   };
 }

@@ -2,7 +2,10 @@ import {
   monthSummary,
   overtimeBalance,
   defaultSchedule,
+  fullAbsence,
+  absenceLabel,
 } from "./public/metrics.js";
+import { createOperations } from "./operations-server.js";
 import { shiftMonth, shiftDay } from "./public/calendar.js";
 import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
@@ -56,6 +59,15 @@ export function createFeatures(db, helpers) {
     }
   }
   ensureContracts();
+  const operations = createOperations(db, {
+    ...helpers,
+    atomic,
+    audit,
+    assertUnlocked,
+    assertPeriodUnlocked,
+    extendInferred,
+    writeEntry,
+  });
   const contractRows = () =>
     db
       .prepare("SELECT * FROM contracts ORDER BY effective_from")
@@ -71,6 +83,7 @@ export function createFeatures(db, helpers) {
   function supplement(u) {
     ensureContracts();
     return {
+      ...operations.supplement(u),
       contracts: contractRows().filter(
         (c) => u.role === "admin" || c.user_id === u.id,
       ),
@@ -202,6 +215,12 @@ export function createFeatures(db, helpers) {
       target,
       month,
       entries: entries.filter((e) => e.date.startsWith(month)),
+      leaves: leaves.filter(
+        (l) =>
+          l.status === "approved" &&
+          l.start <= shiftDay(shiftMonth(month, 1) + "-01", -1) &&
+          l.end >= month + "-01",
+      ),
       summary: monthSummary(
         target,
         entries,
@@ -223,6 +242,7 @@ export function createFeatures(db, helpers) {
     };
   }
   async function handle(req, res, url, u) {
+    if (await operations.handle(req, res, url, u)) return true;
     const p = url.pathname,
       method = req.method;
     if (p === "/api/team-week" && method === "GET") {
@@ -241,7 +261,7 @@ export function createFeatures(db, helpers) {
           .all(start, end),
         leaves: db
           .prepare(
-            "SELECT user_id,start,end,status FROM leaves WHERE status!='rejected' AND start<=? AND end>=?",
+            "SELECT user_id,start,end,status,kind,portion FROM leaves WHERE status!='rejected' AND start<=? AND end>=?",
           )
           .all(end, start),
       });
@@ -290,18 +310,24 @@ export function createFeatures(db, helpers) {
           const has = db
             .prepare("SELECT id FROM entries WHERE user_id=? AND date=?")
             .get(u.id, e.date);
-          const leave = db
-            .prepare(
-              "SELECT id FROM leaves WHERE user_id=? AND status='approved' AND start<=? AND end>=?",
-            )
-            .get(u.id, e.date, e.date);
+          const leave = fullAbsence(
+            db
+              .prepare(
+                "SELECT * FROM leaves WHERE user_id=? AND status='approved' AND start<=? AND end>=?",
+              )
+              .all(u.id, e.date, e.date),
+            u.id,
+            e.date,
+          );
           let reason = locked(u.id, e.date.slice(0, 7))
             ? "Mois verrouillé"
             : leave
-              ? "Vacances approuvées"
+              ? "Absence approuvée"
               : has && b.replace_existing !== true
                 ? "Déjà renseignée"
                 : null;
+          if (operations.active(u.id)?.date === e.date)
+            reason = "Pointage en cours";
           if (reason) {
             skipped.push({ date: e.date, reason });
             continue;
@@ -486,6 +512,23 @@ export function createFeatures(db, helpers) {
         if (month >= today().slice(0, 7))
           fail("Seuls les mois terminés peuvent être validés.");
         if (locked(target.id, month)) fail("Ce mois est déjà validé.", 409);
+        if (operations.active(target.id)?.date.startsWith(month))
+          fail("Un pointage est encore en cours dans ce mois.", 409);
+        if (
+          db
+            .prepare(
+              "SELECT id FROM leaves WHERE user_id=? AND status='pending' AND start<=? AND end>=?",
+            )
+            .get(
+              target.id,
+              shiftDay(shiftMonth(month, 1) + "-01", -1),
+              month + "-01",
+            )
+        )
+          fail(
+            "Traitez les demandes d’absence de ce mois avant sa validation.",
+            409,
+          );
         const data = reportData(target, month);
         atomic(() => {
           db.prepare(
@@ -564,6 +607,8 @@ export function createFeatures(db, helpers) {
     supplement,
     assertUnlocked,
     assertPeriodUnlocked,
+    assertNoClock: operations.assertNoClock,
+    activeClock: operations.active,
     writeEntry,
     updateDailyHours,
     extendInferred,
@@ -623,6 +668,10 @@ async function makePdf(reports, month, asset) {
       `Crédit vacances : ${duration(data.summary.vacation_credit, false)}   Ajustements : ${duration(data.summary.adjustment_minutes)}`,
     );
     line(
+      `Autres absences créditées : ${duration(data.summary.absence_credit || 0, false)}   Sans solde : ${duration(data.summary.unpaid_minutes || 0, false)}`,
+      9,
+    );
+    line(
       `Écart du mois : ${duration(data.summary.delta_minutes)}   Solde cumulé : ${duration(data.balance.minutes)}`,
       11,
     );
@@ -669,6 +718,12 @@ async function makePdf(reports, month, asset) {
         color: rgb(0.87, 0.9, 0.95),
       });
       y -= 23;
+    }
+    if (data.leaves.length) {
+      y -= 10;
+      line("Absences approuvées", 11);
+      for (const l of data.leaves)
+        line(`${l.start} — ${l.end} · ${absenceLabel(l)}`, 9);
     }
     y -= 20;
     if (y < 160) start();

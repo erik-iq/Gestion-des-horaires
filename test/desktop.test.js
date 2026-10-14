@@ -220,6 +220,65 @@ test("Application portable : ressources, isolation locale, instance unique et fe
           password: "Portable-User-123",
         });
         assert.equal(
+          (
+            await request(
+              base,
+              "/api/clock",
+              "POST",
+              { action: "start" },
+              login.cookie,
+            )
+          ).r.status,
+          200,
+        );
+        assert.equal(
+          (
+            await request(
+              base,
+              "/api/clock",
+              "POST",
+              { action: "pause" },
+              login.cookie,
+            )
+          ).r.status,
+          200,
+        );
+        const workerState = await request(
+          base,
+          "/api/state",
+          "GET",
+          null,
+          login.cookie,
+        );
+        assert.ok(workerState.data.clock.paused_at);
+        const today = workerState.data.today;
+        assert.equal(
+          (
+            await request(
+              base,
+              "/api/entries",
+              "POST",
+              { date: today, start: "08:00", end: "17:00", break_minutes: 60 },
+              login.cookie,
+            )
+          ).r.status,
+          409,
+        );
+        const batch = await request(
+          base,
+          "/api/entries/batch",
+          "POST",
+          {
+            entries: [
+              { date: today, start: "08:00", end: "17:00", break_minutes: 60 },
+            ],
+            replace_existing: true,
+          },
+          login.cookie,
+        );
+        assert.equal(batch.data.applied.length, 0);
+        assert.equal(batch.data.skipped[0].reason, "Pointage en cours");
+        assert.equal(
           (await request(base, "/api/desktop/quit", "POST", {}, login.cookie)).r
             .status,
           403,
@@ -254,6 +313,31 @@ test("Application portable : ressources, isolation locale, instance unique et fe
             login.cookie,
           );
           assert.equal(data.data.entries.length, 1);
+          assert.equal(data.data.clock, null);
+          const worker = await request(state.base, "/api/login", "POST", {
+            email: "user@example.ch",
+            password: "Portable-User-123",
+          });
+          const workerState = await request(
+            state.base,
+            "/api/state",
+            "GET",
+            null,
+            worker.cookie,
+          );
+          assert.ok(workerState.data.clock.paused_at);
+          assert.equal(
+            (
+              await request(
+                state.base,
+                "/api/clock",
+                "POST",
+                { action: "cancel" },
+                worker.cookie,
+              )
+            ).r.status,
+            200,
+          );
           const exited = new Promise((resolve) =>
             reopened.child.once("exit", resolve),
           );

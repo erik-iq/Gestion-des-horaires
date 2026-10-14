@@ -1,3 +1,4 @@
+import { fullAbsence } from "./public/metrics.js";
 import { createFeatures } from "./features-server.js";
 import http from "node:http";
 import { DatabaseSync } from "node:sqlite";
@@ -132,21 +133,11 @@ function minutes(t) {
     fail("Heure invalide.");
   return Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
 }
-function daysBetween(start, end) {
-  let days = 0;
-  for (
-    let d = new Date(start + "T12:00:00Z");
-    d <= new Date(end + "T12:00:00Z");
-    d.setUTCDate(d.getUTCDate() + 1)
-  )
-    if (![0, 6].includes(d.getUTCDay())) days++;
-  return days;
-}
 function balance(id, year) {
   const u = db.prepare("SELECT allowance FROM users WHERE id=?").get(id);
   const used = db
     .prepare(
-      "SELECT COALESCE(SUM(days),0) AS days FROM leaves WHERE user_id=? AND status='approved' AND substr(start,1,4)=?",
+      "SELECT COALESCE(SUM(days),0) AS days FROM leaves WHERE user_id=? AND status='approved' AND kind='vacation' AND substr(start,1,4)=?",
     )
     .get(id, year).days;
   return { allowance: u.allowance, used, remaining: u.allowance - used };
@@ -396,15 +387,28 @@ const server = http.createServer(async (req, res) => {
           const e = db
             .prepare("SELECT start,end FROM entries WHERE user_id=? AND date=?")
             .get(x.id, today());
-          const leave = db
+          const absences = db
             .prepare(
-              "SELECT id FROM leaves WHERE user_id=? AND status='approved' AND start<=? AND end>=?",
+              "SELECT kind,portion FROM leaves WHERE user_id=? AND status='approved' AND start<=? AND end>=?",
             )
-            .get(x.id, today(), today());
+            .all(x.id, today(), today());
+          const leave = absences[0];
+          const clock = features.activeClock(x.id);
           return {
             id: x.id,
             name: x.name,
-            status: leave ? "leave" : e ? "recorded" : "unknown",
+            status: clock
+              ? clock.paused_at
+                ? "paused"
+                : "working"
+              : e
+                ? "recorded"
+                : leave
+                  ? "leave"
+                  : "unknown",
+            absences,
+            absence_kind: leave?.kind,
+            portion: leave?.portion,
             start: e?.start,
             end: e?.end,
           };
@@ -421,14 +425,19 @@ const server = http.createServer(async (req, res) => {
         fail("La fin doit suivre le début et dépasser la pause.");
       if (d > today()) fail("La saisie des heures futures est interdite.");
       features.assertUnlocked(u.id, d);
+      features.assertNoClock(u.id, d);
       if (
-        db
-          .prepare(
-            "SELECT id FROM leaves WHERE user_id=? AND status='approved' AND start<=? AND end>=?",
-          )
-          .get(u.id, d, d)
+        fullAbsence(
+          db
+            .prepare(
+              "SELECT * FROM leaves WHERE user_id=? AND status='approved' AND start<=? AND end>=?",
+            )
+            .all(u.id, d, d),
+          u.id,
+          d,
+        )
       )
-        fail("Cette date correspond à des vacances approuvées.");
+        fail("Cette date correspond à une absence approuvée.");
       features.atomic(() =>
         features.writeEntry(u, {
           date: d,
@@ -449,6 +458,7 @@ const server = http.createServer(async (req, res) => {
       if (e.user_id !== u.id)
         fail("Vous ne pouvez supprimer que vos heures.", 403);
       features.assertUnlocked(u.id, e.date);
+      features.assertNoClock(u.id, e.date);
       features.atomic(() => {
         db.prepare("DELETE FROM entries WHERE id=?").run(e.id);
         features.audit(
@@ -457,109 +467,6 @@ const server = http.createServer(async (req, res) => {
           "entry.delete",
           "Suppression du " + e.date,
           e,
-          null,
-        );
-      });
-      return send(res, 200, { ok: true });
-    }
-    if (p === "/api/leaves" && method === "POST") {
-      const b = await body(req),
-        start = date(b.start),
-        end = date(b.end);
-      if (end < start || start.slice(0, 4) !== end.slice(0, 4))
-        fail("Choisissez une période dans la même année.");
-      if (start < today())
-        fail("La demande doit commencer aujourd’hui ou plus tard.");
-      features.assertPeriodUnlocked(u.id, start, end);
-      const days = daysBetween(start, end);
-      if (!days) fail("La période doit inclure un jour ouvré.");
-      if (
-        db
-          .prepare(
-            "SELECT id FROM leaves WHERE user_id=? AND status!='rejected' AND start<=? AND end>=?",
-          )
-          .get(u.id, end, start)
-      )
-        fail("Cette période chevauche une demande existante.");
-      const pending = db
-        .prepare(
-          "SELECT COALESCE(SUM(days),0) AS days FROM leaves WHERE user_id=? AND status='pending' AND substr(start,1,4)=?",
-        )
-        .get(u.id, start.slice(0, 4)).days;
-      if (days > balance(u.id, start.slice(0, 4)).remaining - pending)
-        fail("Solde insuffisant, demandes en attente incluses.");
-      features.atomic(() => {
-        db.prepare(
-          "INSERT INTO leaves(user_id,start,end,days,note) VALUES(?,?,?,?,?)",
-        ).run(u.id, start, end, days, text(b.note || ""));
-        features.audit(
-          u.id,
-          u.id,
-          "leave.create",
-          "Demande de vacances",
-          null,
-          {
-            start,
-            end,
-            days,
-            note: text(b.note || ""),
-          },
-        );
-      });
-      return send(res, 201, { ok: true });
-    }
-    const lm = p.match(/^\/api\/leaves\/(\d+)$/);
-    if (lm && method === "PATCH") {
-      admin(u);
-      const b = await body(req);
-      if (!["approved", "rejected"].includes(b.status))
-        fail("Statut invalide.");
-      const l = db.prepare("SELECT * FROM leaves WHERE id=?").get(lm[1]);
-      if (!l) fail("Demande introuvable.", 404);
-      if (l.status !== "pending")
-        fail("Cette demande a déjà été traitée.", 409);
-      features.assertPeriodUnlocked(l.user_id, l.start, l.end);
-      if (b.status === "approved") {
-        if (l.days > balance(l.user_id, l.start.slice(0, 4)).remaining)
-          fail("Solde de vacances insuffisant.");
-        if (
-          db
-            .prepare(
-              "SELECT id FROM entries WHERE user_id=? AND date BETWEEN ? AND ?",
-            )
-            .get(l.user_id, l.start, l.end)
-        )
-          fail(
-            "Des heures existent sur cette période. Corrigez-les avant validation.",
-          );
-      }
-      features.atomic(() => {
-        db.prepare("UPDATE leaves SET status=? WHERE id=?").run(b.status, l.id);
-        features.audit(
-          u.id,
-          l.user_id,
-          "leave." + b.status,
-          "Vacances " + (b.status === "approved" ? "approuvées" : "refusées"),
-          l,
-          { ...l, status: b.status },
-        );
-      });
-      return send(res, 200, { ok: true });
-    }
-    if (lm && method === "DELETE") {
-      const l = db.prepare("SELECT * FROM leaves WHERE id=?").get(lm[1]);
-      if (!l) fail("Demande introuvable.", 404);
-      if (l.user_id !== u.id || l.status !== "pending")
-        fail("Seule votre demande en attente peut être annulée.", 403);
-      features.assertPeriodUnlocked(l.user_id, l.start, l.end);
-      features.atomic(() => {
-        db.prepare("DELETE FROM leaves WHERE id=?").run(l.id);
-        features.audit(
-          u.id,
-          l.user_id,
-          "leave.cancel",
-          "Annulation de vacances",
-          l,
           null,
         );
       });
@@ -610,7 +517,7 @@ const server = http.createServer(async (req, res) => {
       const allowance = number(b.allowance, 0, 365);
       const rows = db
         .prepare(
-          "SELECT substr(start,1,4) year,SUM(days) days FROM leaves WHERE user_id=? AND status='approved' GROUP BY year",
+          "SELECT substr(start,1,4) year,SUM(days) days FROM leaves WHERE user_id=? AND status='approved' AND kind='vacation' GROUP BY year",
         )
         .all(other.id);
       if (rows.some((x) => x.days > allowance))

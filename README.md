@@ -2,6 +2,24 @@
 
 Application web en français pour suivre les heures de travail, les vacances et la présence d’une équipe. Interface adaptée aux ordinateurs et aux téléphones, stockage SQLite persistant, serveur Node.js avec génération PDF intégrée.
 
+## Nouveautés de la version 2.1
+
+- **Accueil minimaliste** : pointage du jour, heures de la semaine, solde d’heures et vacances disponibles. Les trois dernières alertes remplacent les grands graphiques et tableaux.
+- **Pointage persistant** : Commencer ma journée, Faire une pause, Reprendre et Terminer. Le temps net est enregistré automatiquement dans vos horaires ; une fermeture ou un redémarrage conserve le pointage en cours. Annuler permet de revenir à une saisie manuelle.
+- **Absences** : vacances, maladie, formation, déplacement et congé sans solde, avec matin ou après-midi pour une demi-journée. Toutes les demandes sont approuvées ou refusées par un administrateur. Les notes restent privées ; le type et la partie de journée sont visibles dans le planning partagé.
+- **Alertes** : journées passées non renseignées, pause inférieure à 30 minutes au-delà de 6 heures nettes, dépassement de plus d’une heure de l’objectif ajusté aux absences. Ces repères sont informatifs, ne sont pas un contrôle légal et ne bloquent pas les saisies. Les alertes disparaissent lorsqu’une journée est corrigée ou son mois validé.
+- **Pilotage administrateur** : soldes cumulés de l’équipe, types d’absence et alertes par mois, demandes en attente et liste des mois terminés à examiner. Un mois ne peut pas être clôturé avec des demandes d’absence en attente ou un pointage encore ouvert.
+- Les calendriers et les rapports PDF présentent les types et demi-journées d’absence. Une demi-journée de vacances déduit **0,5 jour** ; maladie, formation et déplacement créditent les heures prévues au contrat, tandis que le congé sans solde réduit l’objectif. Les anciennes demandes restent des vacances à journée entière et les mois déjà validés gardent leurs totaux.
+
+### Vérifier les nouveautés
+
+1. Sur l’accueil, commencez votre journée, lancez une pause, fermez puis rouvrez Tempo : la pause reste enregistrée. Reprenez, puis terminez après au moins une minute de travail. La journée apparaît dans vos horaires avec les pauses déduites.
+2. Dans **Absences**, déclarez une maladie ou formation en demi-journée, puis approuvez-la avec un compte administrateur. Le quota de vacances reste inchangé et vous pouvez saisir la demi-journée travaillée.
+3. Demandez et approuvez une demi-journée de vacances : le solde diminue de 0,5 jour. Deux demandes complémentaires matin/après-midi sont possibles ; une demande qui chevauche la même moitié est refusée.
+4. Dans **Alertes**, choisissez un mois comportant des journées contractuelles passées sans saisie. Dans **Pilotage équipe**, examinez les soldes, absences et mois à valider, puis ouvrez le détail d’un collaborateur.
+
+Un pointage est personnel et ne remplace pas une journée déjà saisie. Une saisie manuelle ou groupée ne peut pas écraser un pointage actif. Les heures sont enregistrées à la minute, dans le fuseau Europe/Zurich. Si un pointage franchit minuit, annulez-le puis répartissez vos heures manuellement sur les deux dates. Une fermeture de Tempo ne termine pas votre journée automatiquement.
+
 ## Nouveautés de la version 2.0
 
 - **Thèmes clair et sombre** inspirés d’IQ Brain, logo IQ intégré, choix mémorisé et interface adaptée aux petits écrans.
@@ -89,9 +107,9 @@ Les tests utilisent une base temporaire séparée et ne modifient pas les donné
 
 ## Fonctions
 
-- **Tableau de bord** : heures de la semaine et du mois, graphique hebdomadaire, dernières saisies et solde annuel.
+- **Tableau de bord** : pointage du jour, trois indicateurs essentiels, alertes utiles et accès au pilotage équipe pour les administrateurs.
 - **Horaires** : vues mois, semaine, journée et liste, saisie rapide, arrivée, départ, pause et note ; modification et suppression de ses propres journées ; export CSV.
-- **Vacances** : demandes, annulation des demandes en attente, approbation ou refus par un administrateur. Le solde est automatiquement déduit lors de l’approbation.
+- **Absences** : vacances, maladie, formation, déplacement et congé sans solde ; journées ou demi-journées, demandes et validation administrateur. Seules les vacances déduisent le quota annuel.
 - **Présence** : tableau partagé de l’équipe pour le jour courant, avec heures déclarées, vacances approuvées ou journée non renseignée.
 - **Rapports mensuels** : synthèse et détail personnel ; sélection d’un collaborateur ou de toute l’équipe pour les administrateurs ; téléchargements PDF et CSV, validation et verrouillage administrateur.
 - **Administration** : création des comptes, rôle, quota annuel, contrats hebdomadaires datés, consultation des soldes et réinitialisation des mots de passe.
@@ -100,14 +118,14 @@ Les collaborateurs modifient uniquement leurs propres heures et demandes. Le pla
 
 ## Règles de calcul
 
-- Temps net = départ − arrivée − pause. Une saisie par personne et par date ; saisir à nouveau la même date la met à jour. La date ne peut pas être future et doit être hors des vacances approuvées.
+- Temps net = départ − arrivée − pause. Une saisie par personne et par date ; saisir à nouveau la même date la met à jour. La date ne peut pas être future et ne doit pas être couverte par une absence approuvée à journée entière. Une demi-journée approuvée permet de saisir les heures de la partie travaillée.
 - Les heures passant minuit doivent être réparties sur deux journées. Le solde d’heures correspond au travail net plus les heures de congés approuvés créditées au contrat, moins les heures contractuelles attendues, plus les ajustements datés. Aucun calcul de paie n’est effectué.
 - L’objectif est calculé à partir du début du contrat jusqu’à aujourd’hui ou la fin du mois passé. Les jours ouvrés non renseignés créent un déficit **provisoire** et sont signalés dans les rapports. Le mois en cours inclut l’objectif complet de la journée courante. Les mois validés conservent leurs totaux figés.
 - Les congés approuvés créditent les heures prévues au contrat pour chaque journée ; une journée déjà travaillée n’est pas créditée deux fois. Le décompte du **quota de vacances** reste distinct, en jours du lundi au vendredi.
 - Le solde cumulé part du premier contrat et reprend les mois validés. Un changement de contrat affecte uniquement sa date d’effet et les dates suivantes ; un ajustement de départ ne s’applique qu’à partir de sa date. Les changements rétroactifs affectant un mois verrouillé sont refusés.
-- Vacances : jours entiers du lundi au vendredi, **jours fériés inclus**. Le quota annuel est configurable, 25 jours par défaut. Les demandes en attente réservent le solde lors de nouvelles demandes. Les périodes qui se chevauchent sont refusées. Les demandes sur deux années doivent être séparées.
+- Vacances : journées ou demi-journées du lundi au vendredi, **jours fériés inclus**. Le quota annuel est configurable, 25 jours par défaut. Les demandes en attente réservent le solde lors de nouvelles demandes. Les périodes qui se chevauchent sont refusées. Les demandes sur deux années doivent être séparées.
 - Le quota est identique chaque année ; aucun report de jours d’une année à l’autre. Les congés approuvés futurs sont inclus dans le solde de leur année.
-- La présence repose sur les déclarations du jour, **pas sur un pointage en temps réel**. Une journée sans déclaration ne constitue pas automatiquement une absence.
+- La présence associe les journées déclarées, les absences approuvées et les états des pointages actifs (activité ou pause). Elle se met à jour lorsque vous actualisez l’interface. Une journée sans déclaration ne constitue pas automatiquement une absence.
 - Le jour courant est déterminé dans le fuseau **Europe/Zurich**. L’interface et les rapports utilisent le format français suisse.
 
 ## Données et exploitation

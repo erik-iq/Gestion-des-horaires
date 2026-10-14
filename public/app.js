@@ -4,6 +4,11 @@ import {
   signedDuration,
   weekDates as datesForWeek,
   scheduleFor,
+  absenceTypes,
+  absenceLabel,
+  absenceFraction,
+  fullAbsence,
+  anomalies,
 } from "./metrics.js";
 import {
   shiftMonth,
@@ -72,6 +77,8 @@ const labels = {
   recorded: "Heures déclarées",
   leave: "En vacances",
   unknown: "Non renseigné",
+  working: "En activité",
+  paused: "En pause",
   pending: "En attente",
   approved: "Approuvée",
   rejected: "Refusée",
@@ -145,7 +152,9 @@ function auth(setup) {
 }
 async function refresh() {
   state = await api("/api/state");
-  if (state.user.role !== "admin" && page === "users") page = "dashboard";
+  clockOffset = (state.server_now || Date.now()) - Date.now();
+  if (state.user.role !== "admin" && ["users", "admin"].includes(page))
+    page = "dashboard";
   if (!month) month = state.today.slice(0, 7);
   if (!reportUser) reportUser = String(state.user.id);
   calendarIndex = null;
@@ -167,10 +176,12 @@ function navItem(key, title, k) {
 const pageTitles = {
   dashboard: "Vue d’ensemble",
   hours: "Mes horaires",
-  leaves: "Vacances",
+  leaves: "Absences",
   attendance: "Présence de l’équipe",
   reports: "Rapports mensuels",
   users: "Gestion des utilisateurs",
+  admin: "Pilotage de l’équipe",
+  alerts: "Alertes",
   overtime: "Solde d’heures",
   team: "Planning de l’équipe",
   history: "Historique des modifications",
@@ -192,6 +203,8 @@ function renderContent() {
   content.innerHTML =
     {
       dashboard,
+      admin,
+      alerts,
       hours,
       leaves,
       attendance,
@@ -206,7 +219,7 @@ function footer() {
   return `<footer class="footer"><span>Tempo · Votre temps, en clair.${state.desktop ? " · Données locales" : ""}</span><span>Votre espace ${state.user.role === "admin" ? "administrateur" : "collaborateur"}</span></footer>`;
 }
 function render() {
-  app.innerHTML = `<div class="shell"><aside class="sidebar">${brand()}<div class="nav-label">Espace personnel</div><nav class="nav" aria-label="Navigation principale">${navItem("dashboard", "Vue d’ensemble", "grid")}${navItem("hours", "Mes horaires", "calendar")}${navItem("leaves", "Vacances", "sun")}${navItem("attendance", "Présence", "people")}${navItem("overtime", "Solde d’heures", "clock")}${navItem("team", "Planning équipe", "people")}${navItem("reports", "Rapports mensuels", "report")}${navItem("history", "Historique", "history")}${state.user.role === "admin" ? `<div class="nav-label">Administration</div>${navItem("users", "Utilisateurs", "people")}` : ""}</nav><div class="sidebar-bottom">${person(state.user, state.user.role === "admin" ? "Administrateur" : "Collaborateur")}<button class="logout" data-action="logout">${icon("logout")}Se déconnecter</button></div></aside><main class="main"><header class="topbar"><div class="breadcrumb"><button class="mobile-menu" data-action="menu" aria-label="Ouvrir le menu">${icon("menu")}</button><span>Mon espace /</span><b>${pageTitles[page]}</b></div><div class="topbar-right"><button class="refresh-button" data-action="theme" aria-label="Changer le thème" title="Mode clair / sombre">${icon(document.documentElement.dataset.theme === "dark" ? "sun" : "moon")}</button>${state.desktop && state.user.role === "admin" ? `<button class="refresh-button" data-action="quit" title="Quitter Tempo" aria-label="Quitter Tempo">${icon("logout")}</button>` : ""}<button class="refresh-button" data-action="refresh" title="Actualiser les données" aria-label="Actualiser les données">${icon("arrow")}</button><span class="date-chip">${icon("calendar")}${fmt(state.today, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</span><button class="avatar account-button" data-action="account" aria-label="Mon compte : ${esc(state.user.name)}" title="Mon compte">${esc(initials(state.user.name))}</button></div></header><div class="content">${{ dashboard, hours, leaves, attendance, reports, users, overtime, team, history }[page]()}${footer()}</div></main></div>`;
+  app.innerHTML = `<div class="shell"><aside class="sidebar">${brand()}<div class="nav-label">Espace personnel</div><nav class="nav" aria-label="Navigation principale">${navItem("dashboard", "Vue d’ensemble", "grid")}${navItem("hours", "Mes horaires", "calendar")}${navItem("leaves", "Absences", "sun")}${navItem("attendance", "Présence", "people")}${navItem("overtime", "Solde d’heures", "clock")}${navItem("team", "Planning équipe", "people")}${navItem("reports", "Rapports mensuels", "report")}${navItem("alerts", "Alertes", "shield")}${navItem("history", "Historique", "history")}${state.user.role === "admin" ? `<div class="nav-label">Administration</div>${navItem("admin", "Pilotage équipe", "grid")}${navItem("users", "Utilisateurs", "people")}` : ""}</nav><div class="sidebar-bottom">${person(state.user, state.user.role === "admin" ? "Administrateur" : "Collaborateur")}<button class="logout" data-action="logout">${icon("logout")}Se déconnecter</button></div></aside><main class="main"><header class="topbar"><div class="breadcrumb"><button class="mobile-menu" data-action="menu" aria-label="Ouvrir le menu">${icon("menu")}</button><span>Mon espace /</span><b>${pageTitles[page]}</b></div><div class="topbar-right"><button class="refresh-button" data-action="theme" aria-label="Changer le thème" title="Mode clair / sombre">${icon(document.documentElement.dataset.theme === "dark" ? "sun" : "moon")}</button>${state.desktop && state.user.role === "admin" ? `<button class="refresh-button" data-action="quit" title="Quitter Tempo" aria-label="Quitter Tempo">${icon("logout")}</button>` : ""}<button class="refresh-button" data-action="refresh" title="Actualiser les données" aria-label="Actualiser les données">${icon("arrow")}</button><span class="date-chip">${icon("calendar")}${fmt(state.today, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</span><button class="avatar account-button" data-action="account" aria-label="Mon compte : ${esc(state.user.name)}" title="Mon compte">${esc(initials(state.user.name))}</button></div></header><div class="content">${{ dashboard, hours, leaves, attendance, reports, users, overtime, team, history, admin, alerts }[page]()}${footer()}</div></main></div>`;
 }
 function isLocked(userId, date) {
   return (state.locks || []).some(
@@ -274,7 +287,7 @@ function overtime() {
       "Solde d’heures",
     ) +
     monthFilter(selector) +
-    `<div class="stats">${stat("Heures réalisées", duration(data.worked_minutes), "", "Dans le mois sélectionné", "clock")}${stat("Heures contractuelles", duration(data.expected_minutes), "", "Jusqu’à la date de calcul", "calendar")}${stat("Écart du mois", signedDuration(data.delta_minutes), "", data.locked ? "Mois validé" : "Provisoire", "report")}${stat("Solde cumulé", signedDuration(total.minutes), "", "Depuis le début du suivi", "clock", true)}</div><div class="notice">${data.locked ? "Ce mois est validé : ses totaux sont figés." : "Solde provisoire : " + data.missing_days + " journée(s) non renseignée(s) sont comprises dans les heures manquantes."} ${data.unconfigured_days ? data.unconfigured_days + " journée(s) n’ont pas de contrat défini. " : ""}Les vacances approuvées créditent les heures normalement prévues ; les jours fériés ne sont pas neutralisés automatiquement.</div><section class="panel"><div class="panel-head"><div><h2>Le détail du calcul</h2><p>${esc(user.name)} · ${fmt(month + "-01", { month: "long", year: "numeric" })}</p></div>${validationControls(user)}</div><div class="table-wrap"><table><tbody><tr><td>Travail saisi</td><td>${duration(data.worked_minutes)}</td></tr><tr><td>Crédit de vacances approuvées</td><td>${duration(data.vacation_credit)}</td></tr><tr><td>Heures prévues au contrat</td><td>−${duration(data.expected_minutes)}</td></tr><tr><td>Ajustements du solde</td><td>${signedDuration(data.adjustment_minutes)}</td></tr><tr class="report-total"><td>Écart du mois</td><td>${signedDuration(data.delta_minutes)}</td></tr></tbody></table></div></section><section class="panel bottom-panel"><div class="panel-head"><div><h2>Évolution du contrat</h2><p>Les changements s’appliquent à partir de leur date d’effet.</p></div></div><div class="table-wrap"><table><thead><tr><th>À partir du</th><th>Horaire hebdomadaire</th><th>Ajustement</th></tr></thead><tbody>${(
+    `<div class="stats">${stat("Heures réalisées", duration(data.worked_minutes), "", "Dans le mois sélectionné", "clock")}${stat("Heures contractuelles", duration(data.expected_minutes), "", "Jusqu’à la date de calcul", "calendar")}${stat("Écart du mois", signedDuration(data.delta_minutes), "", data.locked ? "Mois validé" : "Provisoire", "report")}${stat("Solde cumulé", signedDuration(total.minutes), "", "Depuis le début du suivi", "clock", true)}</div><div class="notice">${data.locked ? "Ce mois est validé : ses totaux sont figés." : "Solde provisoire : " + data.missing_days + " journée(s) non renseignée(s) sont comprises dans les heures manquantes."} ${data.unconfigured_days ? data.unconfigured_days + " journée(s) n’ont pas de contrat défini. " : ""}Les absences approuvées créditent les heures prévues au contrat ; le congé sans solde réduit l’objectif ; les jours fériés ne sont pas neutralisés automatiquement.</div><section class="panel"><div class="panel-head"><div><h2>Le détail du calcul</h2><p>${esc(user.name)} · ${fmt(month + "-01", { month: "long", year: "numeric" })}</p></div>${validationControls(user)}</div><div class="table-wrap"><table><tbody><tr><td>Travail saisi</td><td>${duration(data.worked_minutes)}</td></tr><tr><td>Crédit de vacances approuvées</td><td>${duration(data.vacation_credit)}</td></tr><tr><td>Autres absences créditées</td><td>${duration(data.absence_credit || 0)}</td></tr><tr><td>Objectif retiré · congé sans solde</td><td>${duration(data.unpaid_minutes || 0)}</td></tr><tr><td>Heures prévues au contrat</td><td>−${duration(data.expected_minutes)}</td></tr><tr><td>Ajustements du solde</td><td>${signedDuration(data.adjustment_minutes)}</td></tr><tr class="report-total"><td>Écart du mois</td><td>${signedDuration(data.delta_minutes)}</td></tr></tbody></table></div></section><section class="panel bottom-panel"><div class="panel-head"><div><h2>Évolution du contrat</h2><p>Les changements s’appliquent à partir de leur date d’effet.</p></div></div><div class="table-wrap"><table><thead><tr><th>À partir du</th><th>Horaire hebdomadaire</th><th>Ajustement</th></tr></thead><tbody>${(
       state.contracts || []
     )
       .filter((c) => c.user_id === user.id)
@@ -319,7 +332,7 @@ function team() {
       "",
       "Planning hebdomadaire",
     ) +
-    `<div class="filters"><button class="btn secondary" data-action="team-prev">${icon("chevronLeft")}Précédente</button><strong>${fmt(dates[0])} — ${fmt(dates[6])}</strong><button class="btn secondary" data-action="team-next">Suivante${icon("chevronRight")}</button><button class="btn secondary" data-action="team-today">Cette semaine</button></div><div class="notice">Cette vue montre les horaires déclarés et les vacances. Les notes personnelles et les informations du contrat restent privées.</div><section class="panel">${
+    `<div class="filters"><button class="btn secondary" data-action="team-prev">${icon("chevronLeft")}Précédente</button><strong>${fmt(dates[0])} — ${fmt(dates[6])}</strong><button class="btn secondary" data-action="team-next">Suivante${icon("chevronRight")}</button><button class="btn secondary" data-action="team-today">Cette semaine</button></div><div class="notice">Cette vue montre les horaires déclarés et les absences. Les notes personnelles et les informations du contrat restent privées.</div><section class="panel">${
       !teamData
         ? empty("Chargement de la semaine…")
         : `<div class="table-wrap"><table class="team-week"><thead><tr><th>Collaborateur</th>${dates.map((d) => `<th>${fmt(d, { weekday: "short", day: "numeric", month: "short" })}</th>`).join("")}</tr></thead><tbody>${teamData.users
@@ -330,10 +343,10 @@ function team() {
                     const e = teamData.entries.find(
                         (e) => e.user_id === u.id && e.date === d,
                       ),
-                      l = teamData.leaves.find(
+                      ls = teamData.leaves.filter(
                         (l) => l.user_id === u.id && l.start <= d && l.end >= d,
                       );
-                    return `<td class="${d === state.today ? "team-today" : ""}">${e ? `<span class="team-work"><strong>${duration(entryMinutes(e))}</strong><small>${e.start} — ${e.end}</small></span>` : l ? badge(l.status === "approved" ? "leave" : "pending") : '<span class="team-empty">—</span>'}</td>`;
+                    return `<td class="${d === state.today ? "team-today" : ""}">${e ? `<span class="team-work"><strong>${duration(entryMinutes(e))}</strong><small>${e.start} — ${e.end}</small></span>` : !ls.length ? '<span class="team-empty">—</span>' : ""}${ls.map((l) => `<span class="team-absence ${l.status}">${esc(absenceLabel(l))}${l.status === "pending" ? " · en attente" : ""}</span>`).join("")}</td>`;
                   })
                   .join("")}</tr>`,
             )
@@ -353,7 +366,15 @@ function auditDescription(before, after) {
     end: "Fin",
     break_minutes: "Pause (minutes)",
     note: "Note",
-    days: "Jours de vacances",
+    days: "Durée (jours)",
+    kind: "Type d’absence",
+    portion: "Partie de la journée",
+    absence_credit: "Autres absences créditées",
+    unpaid_minutes: "Congé sans solde",
+    started_at: "Début du pointage",
+    paused_at: "Début de pause",
+    paused_ms: "Pauses cumulées",
+    finished_at: "Fin du pointage",
     status: "Statut",
     effective_from: "Date d’effet",
     schedule: "Horaire hebdomadaire",
@@ -361,6 +382,7 @@ function auditDescription(before, after) {
     reason: "Motif",
     worked_minutes: "Travail",
     expected_minutes: "Contrat",
+    contractual_minutes: "Objectif initial",
     vacation_credit: "Crédit vacances",
     adjustment_minutes: "Ajustement",
     delta_minutes: "Écart du mois",
@@ -377,11 +399,36 @@ function auditDescription(before, after) {
               duration(n),
           )
           .join(" · ")
-      : key.endsWith("_minutes") || key === "vacation_credit"
-        ? signedDuration(v)
-        : key === "status"
-          ? labels[v] || v
-          : String(v);
+      : key === "paused_ms"
+        ? duration(Math.floor(v / 60000))
+        : ["started_at", "paused_at", "finished_at"].includes(key)
+          ? v
+            ? new Intl.DateTimeFormat("fr-CH", {
+                dateStyle: "short",
+                timeStyle: "short",
+                timeZone: "Europe/Zurich",
+              }).format(new Date(v))
+            : "—"
+          : key.endsWith("_minutes") ||
+              ["vacation_credit", "absence_credit"].includes(key)
+            ? signedDuration(v)
+            : key === "kind"
+              ? absenceTypes[v] || v
+              : key === "portion"
+                ? {
+                    full: "Journée entière",
+                    morning: "Matin",
+                    afternoon: "Après-midi",
+                  }[v] || v
+                : key === "status"
+                  ? labels[v] ||
+                    {
+                      active: "En cours",
+                      finished: "Terminé",
+                      cancelled: "Annulé",
+                    }[v] ||
+                    v
+                  : String(v);
   const display = (name, data) =>
     data
       ? `<strong>${name}</strong><pre>${esc(
@@ -598,31 +645,161 @@ function weekDates() {
     return x.toISOString().slice(0, 10);
   });
 }
+let clockOffset = 0,
+  adminMonth = "";
+function userAlerts(user, period = state.today.slice(0, 7)) {
+  return anomalies(
+    user,
+    state.entries,
+    state.leaves,
+    state.contracts || [],
+    state.locks || [],
+    state.today,
+    period,
+  ).filter(
+    (a) =>
+      !(
+        a.type === "missing" &&
+        user.id === state.user.id &&
+        state.clock?.date === a.date
+      ),
+  );
+}
+function clockTime() {
+  const c = state?.clock;
+  if (!c) return "00:00:00";
+  const end = c.paused_at ? Date.parse(c.paused_at) : Date.now() + clockOffset;
+  const seconds = Math.max(
+    0,
+    Math.floor((end - Date.parse(c.started_at) - c.paused_ms) / 1000),
+  );
+  return [
+    Math.floor(seconds / 3600),
+    Math.floor(seconds / 60) % 60,
+    seconds % 60,
+  ]
+    .map((n) => String(n).padStart(2, "0"))
+    .join(":");
+}
+setInterval(() => {
+  const output = document.querySelector("#clock-elapsed");
+  if (output) output.textContent = clockTime();
+}, 1000);
+function clockCard() {
+  const c = state.clock,
+    e = myEntries().find((e) => e.date === state.today);
+  const absent = fullAbsence(state.leaves, state.user.id, state.today);
+  return `<section class="panel clock-card" aria-label="Pointage du jour"><div class="clock-main"><span class="clock-symbol ${c ? "is-running" : ""}">${icon("clock")}</span><div><span class="eyebrow">${c ? (c.paused_at ? "Pause en cours" : "Journée en cours") : e ? "Journée enregistrée" : absent ? "Absence approuvée" : "Votre journée"}</span><div class="clock-value">${c ? `<output id="clock-elapsed">${clockTime()}</output>` : e ? duration(mins(e)) : "Prêt à commencer ?"}</div><p>${c ? `Début ${new Intl.DateTimeFormat("fr-CH", { timeZone: "Europe/Zurich", hour: "2-digit", minute: "2-digit" }).format(new Date(c.started_at))} · ${fmt(c.date)} · pauses déduites` : e ? `${e.start} — ${e.end} · ${e.break_minutes} min de pause` : absent ? "Retrouvez le détail dans vos absences." : "Un clic pour démarrer. Vos pauses sont mémorisées."}</p></div></div><div class="clock-actions">${c ? `<button class="btn secondary" data-action="clock-${c.paused_at ? "resume" : "pause"}">${c.paused_at ? "Reprendre" : "Faire une pause"}</button><button class="btn" data-action="clock-stop">Terminer</button><button class="link-button" data-action="clock-cancel">Annuler le pointage</button>` : e ? `<button class="btn secondary" data-action="entry" data-id="${e.id}">Modifier</button>` : absent ? `<button class="btn secondary" data-page="leaves">Voir l’absence</button>` : `<button class="btn" data-action="clock-start">${icon("plus")}Commencer ma journée</button><button class="link-button" data-action="entry">Saisie manuelle</button>`}</div></section>`;
+}
+function alertRows(rows, user = state.user) {
+  return rows
+    .map(
+      (a) =>
+        `<div class="alert-row"><span class="alert-mark ${a.type}">${icon(a.type === "missing" ? "calendar" : "clock")}</span><div><strong>${esc(a.label)}</strong><small>${fmt(a.date)}${a.minutes ? ` · ${signedDuration(a.minutes)}` : ""}</small></div><button class="link-button" data-action="alert-day" data-date="${a.date}" data-user="${user.id}">Voir${icon("arrow")}</button></div>`,
+    )
+    .join("");
+}
+function unvalidatedMonths() {
+  const last = shiftMonth(state.today.slice(0, 7), -1),
+    rows = [];
+  for (const u of state.users) {
+    const first = (state.contracts || [])
+      .filter((c) => c.user_id === u.id)
+      .map((c) => c.effective_from.slice(0, 7))
+      .sort()[0];
+    if (!first) continue;
+    for (let m = first; m <= last; m = shiftMonth(m, 1))
+      if (!(state.locks || []).some((l) => l.user_id === u.id && l.month === m))
+        rows.push({ user: u, month: m });
+  }
+  return rows;
+}
 function dashboard() {
   const own = myEntries(),
     dates = weekDates(),
-    week = own.filter((e) => dates.includes(e.date)),
-    monthly = own.filter((e) => e.date.startsWith(state.today.slice(0, 7))),
-    pending = state.leaves.filter(
-      (l) => l.user_id === state.user.id && l.status === "pending",
-    ),
-    b = state.balance,
-    weekTotal = week.reduce((a, e) => a + mins(e), 0),
-    monthTotal = monthly.reduce((a, e) => a + mins(e), 0),
-    entries = own.slice(0, 5);
-  const values = dates.map(
-      (d) =>
-        week.filter((e) => e.date === d).reduce((a, e) => a + mins(e), 0) / 60,
-    ),
-    max = Math.max(10, ...values);
+    total = own
+      .filter((e) => dates.includes(e.date))
+      .reduce((n, e) => n + mins(e), 0);
+  const balance = ledger(state.user),
+    alerts = userAlerts(state.user),
+    pending = state.leaves.filter((l) => l.status === "pending");
+  const absent = state.attendance.filter((u) => u.status === "leave").length;
   return (
     heading(
-      `Bonjour, ${esc(state.user.name.split(" ")[0])} <span aria-hidden="true">☀</span>`,
-      "Un regard sur votre temps. Une longueur d’avance sur votre journée.",
-      `<button class="btn" data-action="entry">${icon("plus")}Saisir mes heures</button>`,
-      "Tableau de bord",
+      `Bonjour, ${esc(state.user.name.split(" ")[0])}`,
+      fmt(state.today, { weekday: "long", day: "numeric", month: "long" }),
+      `<button class="btn secondary" data-action="leave">${icon("plus")}Une absence</button>`,
+      "L’essentiel",
     ) +
-    `<div class="stats">${stat("Cette semaine", duration(weekTotal), "", `${week.length} jour${week.length > 1 ? "s" : ""} renseigné${week.length > 1 ? "s" : ""}`, "clock")}${stat("Ce mois-ci", duration(monthTotal), "", fmt(state.today, { month: "long", year: "numeric" }), "calendar")}${stat("Solde de vacances", decimal(b.remaining), "jours", `${decimal(b.used)} jours pris sur ${decimal(b.allowance)}`, "sun", true)}${stat("Solde d’heures", signedDuration(ledger(state.user).minutes), "", ledger(state.user).missing_days ? ledger(state.user).missing_days + " jour(s) à compléter · provisoire" : "Selon votre contrat", "clock")}</div><div class="dashboard-grid"><section class="panel"><div class="panel-head"><div><h2>Votre semaine en un coup d’œil</h2><p>${fmt(dates[0])} — ${fmt(dates[6])}</p></div><span class="legend"><i></i>Heures travaillées</span></div><div class="chart" role="img" aria-label="${esc(dates.map((d, i) => fmt(d, { weekday: "long" }) + ": " + decimal(values[i]) + " heures").join(", "))}"><div class="chart-axis"><span>${decimal(max)}h</span><span>${decimal(max / 2)}h</span><span>0h</span></div><div class="chart-plot">${values.map((v, i) => `<div class="bar-col"><span class="bar-value">${v ? decimal(v) + "h" : ""}</span><div class="bar" style="height:${(v / max) * 85}%"></div><span class="bar-day">${fmt(dates[i], { weekday: "short" })}</span></div>`).join("")}</div></div><div class="week-note">${icon("")}<span class="week-days">Temps net, pauses déduites · Objectif quotidien : ${decimal(state.user.daily_hours)}h</span></div></section><section class="panel balance-panel"><div class="panel-head"><div><h2>Un peu de temps pour vous.</h2><p>Votre solde annuel · ${state.today.slice(0, 4)}</p></div>${icon("sun")}</div><div class="balance-body"><div class="balance-number">${decimal(b.remaining)} <span>jours disponibles</span></div><div class="progress" role="progressbar" aria-label="Vacances utilisées" aria-valuenow="${b.used}" aria-valuemin="0" aria-valuemax="${b.allowance}"><div style="width:${b.allowance ? Math.min(100, (b.used / b.allowance) * 100) : 0}%"></div></div><div class="balance-details"><span>${decimal(b.used)} jours approuvés</span><span>${decimal(b.allowance)} jours / an</span></div><button class="btn" data-action="leave">${icon("plus")}Planifier mes vacances</button><p class="helper">${pending.reduce((a, l) => a + l.days, 0)} jour(s) en attente · Décompte du lundi au vendredi.</p></div></section></div><section class="panel bottom-panel"><div class="panel-head"><div><h2>Mes dernières saisies</h2><p>Chaque journée compte. Gardez-en une trace.</p></div><button class="link-button" data-page="hours">Tout voir →</button></div>${entries.length ? entryTable(entries, false) : empty("Votre première journée commence ici.<br>Saisissez vos heures pour suivre votre activité.")}</section>`
+    clockCard() +
+    `<div class="minimal-stats"><button data-page="hours"><span>Cette semaine</span><strong>${duration(total)}</strong><small>Heures travaillées</small></button><button data-page="overtime"><span>Solde d’heures</span><strong>${signedDuration(balance.minutes)}</strong><small>${balance.missing_days ? "Provisoire · journées à compléter" : "Selon votre contrat"}</small></button><button data-page="leaves"><span>Vacances disponibles</span><strong>${decimal(state.balance.remaining)} <em>jours</em></strong><small>Solde ${state.today.slice(0, 4)}</small></button></div>` +
+    `<section class="panel home-alerts"><div class="panel-head"><div><h2>À vérifier</h2><p>${alerts.length ? alerts.length + " point(s) ce mois-ci" : "Vos journées renseignées ne présentent aucune alerte."}</p></div><button class="link-button" data-page="alerts">Tout voir${icon("arrow")}</button></div>${alerts.length ? alertRows(alerts.slice(-3).reverse()) : `<div class="all-clear">${icon("check")}Tout est à jour</div>`}</section>` +
+    (state.user.role === "admin"
+      ? `<section class="panel admin-glance"><div><span class="eyebrow">Votre équipe</span><h2>${state.users.length} collaborateurs</h2></div><div class="glance-values"><span><strong>${absent}</strong> absence(s) aujourd’hui</span><span><strong>${pending.length}</strong> demande(s) à traiter</span><span><strong>${unvalidatedMonths().length}</strong> mois à valider</span></div><button class="btn secondary" data-page="admin">Ouvrir le pilotage${icon("arrow")}</button></section>`
+      : "")
+  );
+}
+function alerts() {
+  const rows = userAlerts(state.user, month);
+  return (
+    heading(
+      "Les points à vérifier",
+      "Des repères pour compléter vos horaires, sans bloquer vos saisies.",
+      "",
+      "Alertes",
+    ) +
+    monthFilter() +
+    `<section class="panel"><div class="panel-head"><h2>${rows.length} alerte(s)</h2></div>${rows.length ? alertRows(rows.slice().reverse()) : empty("Aucune alerte pour cette période.", "check")}</section><p class="helper">Une journée prévue au contrat est signalée lorsqu’elle est passée et reste à renseigner. Repères indicatifs : moins de 30 min de pause au-delà de 6 h travaillées, ou plus de 1 h au-delà de l’objectif du jour. Les absences approuvées ajustent cet objectif ; les mois validés ne génèrent plus d’alertes.</p>`
+  );
+}
+function admin() {
+  if (state.user.role !== "admin") return dashboard();
+  if (!adminMonth) adminMonth = shiftMonth(state.today.slice(0, 7), -1);
+  const last = shiftDay(shiftMonth(adminMonth, 1) + "-01", -1);
+  const members = state.users.map((u) => {
+    const data = summary(u, adminMonth),
+      balance = ledger(u),
+      alerts = userAlerts(u, adminMonth);
+    const leaves = state.leaves.filter(
+      (l) =>
+        l.user_id === u.id &&
+        l.status === "approved" &&
+        l.start <= last &&
+        l.end >= adminMonth + "-01",
+    );
+    const eligible = (state.contracts || []).some(
+      (c) => c.user_id === u.id && c.effective_from <= last,
+    );
+    return { u, data, balance, alerts, leaves, eligible };
+  });
+  const positive = members.reduce(
+    (n, r) => n + Math.max(0, r.balance.minutes),
+    0,
+  );
+  const pending = state.leaves.filter((l) => l.status === "pending");
+  const validations = unvalidatedMonths();
+  return (
+    heading(
+      "L’équipe, en un regard.",
+      "Soldes, absences et clôtures mensuelles.",
+      `<button class="btn secondary" data-page="team">${icon("calendar")}Planning équipe</button>`,
+      "Pilotage administrateur",
+    ) +
+    `<div class="minimal-stats"><button data-page="reports"><span>Heures en crédit</span><strong>${duration(positive)}</strong><small>Cumul positif · soldes provisoires inclus</small></button><button data-page="leaves"><span>Demandes à traiter</span><strong>${pending.length}</strong><small>Tous types d’absence</small></button><button data-action="admin-pending"><span>Mois à valider</span><strong>${validations.length}</strong><small>Depuis le début des contrats</small></button></div>` +
+    `<div class="filters"><label for="admin-month">Période</label><input type="month" id="admin-month" value="${adminMonth}" min="2000-01" max="${state.today.slice(0, 7)}"></div><section class="panel"><div class="panel-head"><h2>Synthèse de l’équipe</h2><span class="current-pill">${fmt(adminMonth + "-01", { month: "long", year: "numeric" })}</span></div><div class="table-wrap"><table><thead><tr><th>Collaborateur</th><th>Solde cumulé</th><th>Absences du mois</th><th>Alertes</th><th>Clôture</th><th></th></tr></thead><tbody>${members.map((r) => `<tr><td>${person(r.u)}</td><td><strong class="${r.balance.minutes < 0 ? "balance-negative" : "balance-positive"}">${signedDuration(r.balance.minutes)}</strong><small class="cell-sub">${r.balance.missing_days ? "Provisoire" : "À jour"}</small></td><td>${r.leaves.length ? [...new Set(r.leaves.map((l) => absenceTypes[l.kind || "vacation"]))].map((k) => esc(k)).join(" · ") : "—"}</td><td>${r.alerts.length ? `<span class="badge pending">${r.alerts.length} à vérifier</span>` : `<span class="muted">—</span>`}</td><td>${r.data.locked ? `<span class="badge approved">Validé</span>` : !r.eligible ? "Avant contrat" : adminMonth >= state.today.slice(0, 7) ? "En cours" : `<button class="btn small secondary" data-action="validate-month" data-user="${r.u.id}" data-month="${adminMonth}">Valider</button>`}</td><td><button class="link-button" data-action="member-report" data-user="${r.u.id}">Détail${icon("arrow")}</button></td></tr>`).join("")}</tbody></table></div></section>` +
+    `<section class="panel bottom-panel" id="pending-months"><div class="panel-head"><h2>Clôtures à effectuer</h2><span class="current-pill">${validations.length}</span></div>${
+      validations.length
+        ? `<div class="pending-list">${validations
+            .slice(0, 12)
+            .map(
+              (r) =>
+                `<div><span><strong>${esc(r.user.name)}</strong><small>${fmt(r.month + "-01", { month: "long", year: "numeric" })}</small></span><button class="link-button" data-action="member-report" data-user="${r.user.id}" data-month="${r.month}">Examiner${icon("arrow")}</button></div>`,
+            )
+            .join(
+              "",
+            )}</div>${validations.length > 12 ? '<p class="helper">Sélectionnez un mois pour consulter les autres clôtures.</p>' : ""}`
+        : empty("Tous les mois terminés sont validés.", "check")
+    }</section>`
   );
 }
 function entryTable(rows, actions = true) {
@@ -683,14 +860,15 @@ function calendarMonth(data, user) {
 function calendarCell(day, data) {
   const e = data.entriesByDate.get(day.date),
     leave = data.periodsByDate.get(day.date),
+    dayAbsences = data.absencesByDate?.get(day.date) || (leave ? [leave] : []),
     active = day.date === selectedDate,
     today = day.date === state.today;
   const status = e
     ? duration(entryMinutes(e)) + " de travail"
     : leave
-      ? labels[leave.status] + " — vacances"
+      ? labels[leave.status] + " — " + absenceLabel(leave)
       : "Aucune saisie";
-  return `<button class="calendar-day ${day.inMonth ? "" : "outside"} ${day.weekend ? "weekend" : ""} ${active ? "selected" : ""} ${today ? "today" : ""}" data-action="select-day" data-date="${day.date}" aria-label="${esc(fmt(day.date, { weekday: "long", day: "numeric", month: "long", year: "numeric" }) + ", " + status)}" aria-pressed="${active}" tabindex="${active ? 0 : -1}"><span class="day-top"><span class="day-number">${Number(day.date.slice(-2))}</span>${today ? '<span class="today-label">Aujourd’hui</span>' : ""}</span>${e ? `<span class="day-event work"><strong>${duration(entryMinutes(e))}</strong><span>${e.start} – ${e.end}</span></span>` : ""}${leave ? `<span class="day-event ${leave.status === "approved" ? "vacation" : "pending"}">${icon("sun")}<span>${leave.status === "approved" ? "Vacances" : "Demande"}</span></span>` : ""}${!e && !leave && day.inMonth && !day.weekend && day.date <= state.today ? '<span class="day-empty">Ajouter des heures</span>' : ""}</button>`;
+  return `<button class="calendar-day ${day.inMonth ? "" : "outside"} ${day.weekend ? "weekend" : ""} ${active ? "selected" : ""} ${today ? "today" : ""}" data-action="select-day" data-date="${day.date}" aria-label="${esc(fmt(day.date, { weekday: "long", day: "numeric", month: "long", year: "numeric" }) + ", " + status)}" aria-pressed="${active}" tabindex="${active ? 0 : -1}"><span class="day-top"><span class="day-number">${Number(day.date.slice(-2))}</span>${today ? '<span class="today-label">Aujourd’hui</span>' : ""}</span>${e ? `<span class="day-event work"><strong>${duration(entryMinutes(e))}</strong><span>${e.start} – ${e.end}</span></span>` : ""}${dayAbsences.map((l) => `<span class="day-event ${l.status === "approved" ? "vacation" : "pending"}">${icon("sun")}<span>${esc(absenceLabel(l))}${l.status === "pending" ? " · en attente" : ""}</span></span>`).join("")}${!e && !leave && day.inMonth && !day.weekend && day.date <= state.today ? '<span class="day-empty">Ajouter des heures</span>' : ""}</button>`;
 }
 function selectedDayPanel(data, user) {
   const e = data.entriesByDate.get(selectedDate),
@@ -705,7 +883,7 @@ function selectedDayPanel(data, user) {
   let detail = e
     ? `<div class="day-total"><strong>${duration(entryMinutes(e))}</strong><span>heures travaillées</span></div><div class="day-details"><span>Arrivée<strong>${e.start}</strong></span><span>Départ<strong>${e.end}</strong></span><span>Pause<strong>${e.break_minutes} min</strong></span></div>${e.note ? `<p class="day-note">${esc(e.note)}</p>` : ""}`
     : leave
-      ? `<div class="day-illustration vacation">${icon("sun")}</div><h3>${leave.status === "approved" ? "Une pause bien méritée." : "Votre demande est en cours."}</h3><p class="day-description">${fmt(leave.start)} — ${fmt(leave.end)} · ${leave.days} jour(s)</p>${badge(leave.status)}`
+      ? `<div class="day-illustration vacation">${icon("sun")}</div><h3>${leave.status === "approved" ? esc(absenceLabel(leave)) : "Votre demande est en cours."}</h3><p class="day-description">${fmt(leave.start)} — ${fmt(leave.end)} · ${leave.days} jour(s)</p>${badge(leave.status)}`
       : `<div class="day-illustration">${icon(future ? "calendar" : "clock")}</div><h3>${future ? "Une journée à venir." : "Une journée à renseigner."}</h3><p class="day-description">${future ? "Planifiez vos vacances pour cette date. Les heures se saisissent après la journée de travail." : "Ajoutez vos heures de travail pour compléter votre calendrier."}</p>`;
   let buttons = isLocked(user.id, selectedDate)
     ? `<p class="notice">${icon("shield")}Mois validé · saisies verrouillées</p>`
@@ -713,14 +891,20 @@ function selectedDayPanel(data, user) {
   if (
     own &&
     !future &&
-    leave?.status !== "approved" &&
+    !fullAbsence(state.leaves, user.id, selectedDate) &&
     !isLocked(user.id, selectedDate)
   )
     buttons = `<button class="btn" data-action="entry" ${e ? `data-id="${e.id}"` : ""} data-date="${selectedDate}">${icon(e ? "clock" : "plus")}${e ? "Modifier la journée" : "Saisir cette journée"}</button>${e ? `<button class="link-button delete-day" data-action="delete-entry" data-id="${e.id}">${icon("trash")}Supprimer la saisie</button>` : ""}`;
   if (own && future && !leave && !isLocked(user.id, selectedDate))
-    buttons = `<button class="btn secondary" data-action="leave" data-date="${selectedDate}">${icon("sun")}Demander des vacances</button>`;
+    buttons = `<button class="btn secondary" data-action="leave" data-date="${selectedDate}">${icon("sun")}Déclarer une absence</button>`;
   if (leave?.status === "pending" && state.user.role === "admin")
     buttons += `<button class="btn secondary" data-page="leaves">Examiner la demande ${icon("arrow")}</button>`;
+  detail += (data.absencesByDate?.get(selectedDate) || [])
+    .map(
+      (l) =>
+        `<p class="day-description">${esc(absenceLabel(l))} · ${labels[l.status]}</p>`,
+    )
+    .join("");
   return `<section class="panel selected-day-panel"><div class="day-panel-title"><span class="eyebrow">Journée sélectionnée</span><h2>${title}</h2>${user.id !== state.user.id ? `<p>${esc(user.name)}</p>` : ""}</div><div class="selected-day-body">${detail}<div class="day-panel-actions">${buttons}</div></div></section>`;
 }
 function calendarUpcoming(user) {
@@ -783,11 +967,11 @@ function leaves() {
     b = state.balance;
   return (
     heading(
-      "Vacances & équilibre",
+      "Vos absences, simplement.",
       "Planifiez vos absences. Nous nous occupons du décompte.",
-      `<button class="btn" data-action="leave">${icon("plus")}Demander des vacances</button>`,
+      `<button class="btn" data-action="leave">${icon("plus")}Déclarer une absence</button>`,
     ) +
-    `<div class="stats">${stat("Mon quota annuel", decimal(b.allowance), "jours", state.today.slice(0, 4), "calendar")}${stat("Mes congés approuvés", decimal(b.used), "jours", "Déduits du solde annuel", "check")}${stat("Mon solde disponible", decimal(b.remaining), "jours", "Hors demandes en attente", "sun", true)}${stat(admin ? "Demandes à traiter" : "Mes demandes en attente", rows.filter((l) => l.status === "pending").length, "", admin ? "Pour l’ensemble de l’équipe" : "Validation administrateur", "report")}</div><div class="notice">Les congés sont comptés en jours entiers du lundi au vendredi. Les jours fériés sont inclus. Une demande couvrant deux années doit être répartie en deux demandes. Les demandes en attente réservent votre solde lors d’une nouvelle demande.</div><section class="panel"><div class="panel-head"><div><h2>${admin ? "Les demandes de l’équipe" : "Mes demandes"}</h2><p>Un suivi clair, de la demande à la validation.</p></div></div>${rows.length ? `<div class="table-wrap"><table><thead><tr>${admin ? "<th>Collaborateur</th>" : ""}<th>Période</th><th>Durée</th><th>Statut</th><th>Note</th><th>Actions</th></tr></thead><tbody>${rows.map((l) => `<tr>${admin ? `<td>${person(state.users.find((u) => u.id === l.user_id))}</td>` : ""}<td>${fmt(l.start, { day: "numeric", month: "short", year: "numeric" })} → ${fmt(l.end, { day: "numeric", month: "short", year: "numeric" })}</td><td>${l.days} jour${l.days > 1 ? "s" : ""}</td><td>${badge(l.status)}</td><td class="note-cell">${esc(l.note) || "—"}</td><td><div class="actions">${l.status === "pending" ? `${admin ? `<button class="btn small" data-action="approve" data-id="${l.id}">Approuver</button><button class="btn small danger" data-action="reject" data-id="${l.id}">Refuser</button>` : ""}${l.user_id === state.user.id ? `<button class="link-button" data-action="cancel-leave" data-id="${l.id}">Annuler</button>` : ""}` : "—"}</div></td></tr>`).join("")}</tbody></table></div>` : empty("Aucune demande de vacances pour le moment.", "sun")}</section>`
+    `<div class="stats">${stat("Mon quota annuel", decimal(b.allowance), "jours", state.today.slice(0, 4), "calendar")}${stat("Mes congés approuvés", decimal(b.used), "jours", "Déduits du solde annuel", "check")}${stat("Mon solde disponible", decimal(b.remaining), "jours", "Hors demandes en attente", "sun", true)}${stat(admin ? "Demandes à traiter" : "Mes demandes en attente", rows.filter((l) => l.status === "pending").length, "", admin ? "Pour l’ensemble de l’équipe" : "Validation administrateur", "report")}</div><div class="notice">Vacances, maladie, formation, déplacement ou congé sans solde : journées entières et demi-journées. Seules les vacances déduisent votre quota. Les jours ouvrés sont comptés du lundi au vendredi, jours fériés inclus.</div><section class="panel"><div class="panel-head"><div><h2>${admin ? "Les demandes de l’équipe" : "Mes demandes"}</h2><p>Un suivi clair, de la demande à la validation.</p></div></div>${rows.length ? `<div class="table-wrap"><table><thead><tr>${admin ? "<th>Collaborateur</th>" : ""}<th>Type</th><th>Période</th><th>Durée</th><th>Statut</th><th>Note</th><th>Actions</th></tr></thead><tbody>${rows.map((l) => `<tr>${admin ? `<td>${person(state.users.find((u) => u.id === l.user_id))}</td>` : ""}<td><strong>${esc(absenceLabel(l))}</strong></td><td>${fmt(l.start, { day: "numeric", month: "short", year: "numeric" })} → ${fmt(l.end, { day: "numeric", month: "short", year: "numeric" })}</td><td>${l.days} jour${l.days > 1 ? "s" : ""}</td><td>${badge(l.status)}</td><td class="note-cell">${esc(l.note) || "—"}</td><td><div class="actions">${l.status === "pending" ? `${admin ? `<button class="btn small" data-action="approve" data-id="${l.id}">Approuver</button><button class="btn small danger" data-action="reject" data-id="${l.id}">Refuser</button>` : ""}${l.user_id === state.user.id ? `<button class="link-button" data-action="cancel-leave" data-id="${l.id}">Annuler</button>` : ""}` : "—"}</div></td></tr>`).join("")}</tbody></table></div>` : empty("Aucune demande d’absence pour le moment.", "sun")}</section>`
   );
 }
 function attendance() {
@@ -799,7 +983,7 @@ function attendance() {
       "",
       "Présence de l’équipe",
     ) +
-    `<div class="stats">${stat("Collaborateurs", rows.length, "", "Au sein de votre équipe", "people")}${stat("Heures déclarées", rows.filter((r) => r.status === "recorded").length, "", "Une saisie existe aujourd’hui", "clock")}${stat("En vacances", rows.filter((r) => r.status === "leave").length, "", "Congés approuvés aujourd’hui", "sun", true)}${stat("Non renseignés", rows.filter((r) => r.status === "unknown").length, "", "Aucune saisie ni congé approuvé", "calendar")}</div><div class="notice">Présence du ${fmt(state.today, { day: "numeric", month: "long", year: "numeric" })}. Ce tableau reflète les déclarations du jour ; il ne constitue pas un pointage en temps réel.</div><div class="attendance-grid">${rows.map((u) => `<article class="panel person-card">${person(u, "Équipe Tempo")}<div class="person-meta">${badge(u.status)}<span>${u.start ? u.start + " – " + u.end : "—"}</span></div></article>`).join("")}</div>`
+    `<div class="stats">${stat("Collaborateurs", rows.length, "", "Au sein de votre équipe", "people")}${stat("Heures déclarées", rows.filter((r) => r.status === "recorded").length, "", "Une saisie existe aujourd’hui", "clock")}${stat("En absence", rows.filter((r) => r.status === "leave").length, "", "Absences approuvées aujourd’hui", "sun", true)}${stat("Non renseignés", rows.filter((r) => r.status === "unknown").length, "", "Aucune saisie ni congé approuvé", "calendar")}</div><div class="notice">Présence du ${fmt(state.today, { day: "numeric", month: "long", year: "numeric" })}. Ce tableau associe les heures déclarées, les absences et les pointages en cours. Actualisez pour obtenir les derniers états.</div><div class="attendance-grid">${rows.map((u) => `<article class="panel person-card">${person(u, "Équipe Tempo")}<div class="person-meta">${u.status === "leave" ? `<span class="badge leave">${esc(absenceLabel({ kind: u.absence_kind, portion: u.portion }))}</span>` : badge(u.status)}<span>${u.start ? u.start + " – " + u.end : "—"}</span>${(u.absences || []).map((l) => `<small>${esc(absenceLabel(l))}</small>`).join("")}</div></article>`).join("")}</div>`
   );
 }
 function userSelect() {
@@ -831,7 +1015,8 @@ function reportRows() {
           l.user_id === u.id &&
           l.status === "approved" &&
           l.start <= end &&
-          l.end >= start,
+          l.end >= start &&
+          (!l.kind || l.kind === "vacation"),
       )
       .forEach((l) => {
         for (
@@ -839,7 +1024,7 @@ function reportRows() {
           d <= new Date((l.end < end ? l.end : end) + "T12:00:00Z");
           d.setUTCDate(d.getUTCDate() + 1)
         )
-          if (![0, 6].includes(d.getUTCDay())) leaveDays++;
+          if (![0, 6].includes(d.getUTCDay())) leaveDays += absenceFraction(l);
       });
     return {
       u,
@@ -908,6 +1093,10 @@ function dialog(
 }
 function entryDialog(id, date = state.today) {
   const e = id ? myEntries().find((x) => x.id === Number(id)) : null;
+  if (state.clock?.date === (e?.date || date)) {
+    toast("Terminez ou annulez le pointage avant la saisie manuelle.", true);
+    return;
+  }
   if (isLocked(state.user.id, e?.date || date)) {
     toast("Ce mois est validé et verrouillé.", true);
     return;
@@ -933,23 +1122,36 @@ function entryDialog(id, date = state.today) {
     };
 }
 function leaveDialog(date = state.today) {
-  const year = date.slice(0, 4);
-  const used = state.leaves
-    .filter(
-      (l) =>
-        l.user_id === state.user.id &&
-        l.status === "approved" &&
-        l.start.startsWith(year),
-    )
-    .reduce((n, l) => n + l.days, 0);
-  const remaining = state.user.allowance - used;
   dialog(
-    "Un peu de temps pour vous.",
-    "Votre demande sera transmise à un administrateur.",
-    `<div class="form-grid"><label class="field">Premier jour<input type="date" name="start" required min="${state.today}" value="${date}"></label><label class="field">Dernier jour inclus<input type="date" name="end" required min="${state.today}" value="${date}"></label><label class="field full">Note facultative<textarea name="note" maxlength="500" placeholder="Une précision pour votre équipe…"></textarea></label></div><p class="helper">Jours entiers, du lundi au vendredi. Les jours fériés sont inclus. Solde actuel : ${decimal(remaining)} jours (${year}).</p>`,
+    "Déclarer une absence",
+    "Votre demande sera examinée par un administrateur.",
+    `<div class="form-grid"><label class="field full">Type d’absence<select name="kind" id="absence-kind">${Object.entries(
+      absenceTypes,
+    )
+      .map(([k, v]) => `<option value="${k}">${v}</option>`)
+      .join(
+        "",
+      )}</select></label><label class="field full">Durée<select name="portion" id="absence-portion" aria-label="Durée"><option value="full">Journée(s) entière(s)</option><option value="morning">Demi-journée · matin</option><option value="afternoon">Demi-journée · après-midi</option></select></label><label class="field">Premier jour<input type="date" name="start" value="${date}" min="${state.today}" required></label><label class="field">Dernier jour inclus<input type="date" name="end" value="${date}" min="${state.today}" required></label><label class="field full">Note facultative<textarea name="note" maxlength="500" placeholder="Visible par vous et les administrateurs"></textarea></label></div><p class="helper" id="absence-help">Vacances : ${decimal(state.balance.remaining)} jours disponibles. Une demi-journée déduit 0,5 jour.</p>`,
     "Envoyer la demande",
     (b) => api("/api/leaves", "POST", b),
   );
+  const kind = modal.querySelector("#absence-kind"),
+    portion = modal.querySelector("#absence-portion"),
+    start = modal.querySelector('[name="start"]'),
+    end = modal.querySelector('[name="end"]');
+  const update = () => {
+    const minimum = kind.value === "vacation" ? state.today : "2000-01-01";
+    start.min = end.min = minimum;
+    end.readOnly = portion.value !== "full";
+    if (end.readOnly) end.value = start.value;
+    modal.querySelector("#absence-help").textContent =
+      kind.value === "vacation"
+        ? `Vacances : ${decimal(state.balance.remaining)} jours disponibles. Une demi-journée déduit 0,5 jour.`
+        : kind.value === "unpaid"
+          ? "L’objectif est réduit pour cette absence. Votre quota de vacances ne change pas."
+          : "Les heures prévues au contrat sont créditées après approbation. Votre quota de vacances ne change pas.";
+  };
+  kind.onchange = portion.onchange = start.onchange = update;
 }
 function userDialog(id) {
   const u = id ? state.users.find((x) => x.id === Number(id)) : null;
@@ -1078,6 +1280,44 @@ document.addEventListener("click", async (event) => {
   const { action, id } = target.dataset;
   try {
     switch (action) {
+      case "clock-start":
+      case "clock-pause":
+      case "clock-resume":
+      case "clock-stop":
+        target.disabled = true;
+        try {
+          await api("/api/clock", "POST", { action: action.slice(6) });
+          await refresh();
+        } finally {
+          target.disabled = false;
+        }
+        break;
+      case "clock-cancel":
+        confirmation(
+          "Annuler le pointage ?",
+          "Les heures de ce pointage ne seront pas enregistrées. Vous pourrez les saisir manuellement.",
+          () => api("/api/clock", "POST", { action: "cancel" }),
+        );
+        break;
+      case "alert-day":
+        calendarUser = target.dataset.user;
+        selectedDate = target.dataset.date;
+        month = selectedDate.slice(0, 7);
+        hoursView = "day";
+        page = "hours";
+        render();
+        break;
+      case "member-report":
+        reportUser = target.dataset.user;
+        month = target.dataset.month || adminMonth || state.today.slice(0, 7);
+        page = "reports";
+        render();
+        break;
+      case "admin-pending":
+        document
+          .querySelector("#pending-months")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        break;
       case "theme": {
         const theme =
           document.documentElement.dataset.theme === "dark" ? "light" : "dark";
@@ -1234,10 +1474,12 @@ document.addEventListener("click", async (event) => {
       case "reject":
         confirmation(
           action === "approve"
-            ? "Approuver les vacances ?"
+            ? "Approuver cette absence ?"
             : "Refuser la demande ?",
           action === "approve"
-            ? "Les jours ouvrés seront déduits du solde de ce collaborateur."
+            ? state.leaves.find((l) => l.id === Number(id))?.kind === "vacation"
+              ? "Cette demande sera approuvée et déduite du solde de vacances."
+              : "Cette absence sera approuvée et prise en compte dans le solde d’heures. Le quota de vacances ne change pas."
             : "La demande sera marquée comme refusée.",
           () =>
             api("/api/leaves/" + id, "PATCH", {
@@ -1303,6 +1545,17 @@ document.addEventListener("click", async (event) => {
   }
 });
 document.addEventListener("change", (event) => {
+  if (event.target.id === "admin-month") {
+    const value = event.target.value;
+    if (
+      /^\d{4}-\d{2}$/.test(value) &&
+      value >= "2000-01" &&
+      value <= state.today.slice(0, 7)
+    ) {
+      adminMonth = value;
+      renderContent();
+    }
+  }
   if (event.target.id === "month") {
     const v = event.target.value;
     if (/^\d{4}-\d{2}$/.test(v) && v >= "2000-01" && v <= "2100-12") {
@@ -1337,7 +1590,7 @@ document.addEventListener("dblclick", (event) => {
     return;
   const data = calendarData();
   if (isLocked(state.user.id, day.dataset.date)) return;
-  if (data.periodsByDate.get(day.dataset.date)?.status === "approved") return;
+  if (fullAbsence(state.leaves, state.user.id, day.dataset.date)) return;
   entryDialog(data.entriesByDate.get(day.dataset.date)?.id, day.dataset.date);
 });
 document.addEventListener("keydown", (event) => {

@@ -170,3 +170,120 @@ test("Une journée de travail et un congé importé ne sont pas crédités deux 
   assert.equal(s.vacation_credit, 0);
   assert.equal(s.delta_minutes, 0);
 });
+
+test("Les demi-journées créditées coexistent avec le travail et les congés sans solde réduisent l’objectif", () => {
+  const s = monthSummary(
+    user,
+    [{ ...entry("2026-10-12", "12:00"), break_minutes: 0 }],
+    [
+      {
+        user_id: 1,
+        start: "2026-10-12",
+        end: "2026-10-12",
+        kind: "illness",
+        portion: "afternoon",
+        status: "approved",
+      },
+      {
+        user_id: 1,
+        start: "2026-10-13",
+        end: "2026-10-13",
+        kind: "unpaid",
+        portion: "full",
+        status: "approved",
+      },
+      {
+        user_id: 1,
+        start: "2026-10-14",
+        end: "2026-10-14",
+        kind: "training",
+        portion: "full",
+        status: "approved",
+      },
+    ],
+    contracts,
+    [],
+    "2026-10",
+    "2026-10-14",
+  );
+  assert.equal(s.expected_minutes, 960);
+  assert.equal(s.unpaid_minutes, 480);
+  assert.equal(s.absence_credit, 720);
+  assert.equal(s.vacation_credit, 0);
+  assert.equal(s.delta_minutes, 0);
+  assert.equal(s.missing_days, 0);
+});
+test("Deux demi-journées de vacances créditent une journée entière", () => {
+  const s = monthSummary(
+    user,
+    [],
+    ["morning", "afternoon"].map((portion) => ({
+      user_id: 1,
+      start: "2026-10-12",
+      end: "2026-10-12",
+      kind: "vacation",
+      portion,
+      status: "approved",
+    })),
+    contracts,
+    [],
+    "2026-10",
+    "2026-10-12",
+  );
+  assert.equal(s.vacation_credit, 480);
+  assert.equal(s.delta_minutes, 0);
+  assert.equal(s.missing_days, 0);
+});
+test("Les alertes excluent aujourd’hui et les absences, vérifient les pauses et suivent le contrat", async () => {
+  const { anomalies } = await import("../public/metrics.js");
+  const rows = anomalies(
+    user,
+    [{ ...entry("2026-10-12", "18:00"), break_minutes: 0 }],
+    [],
+    contracts,
+    [],
+    "2026-10-14",
+  );
+  assert.deepEqual(
+    rows.map((r) => r.type),
+    ["break", "overtime", "missing"],
+  );
+  assert.equal(rows.find((r) => r.type === "missing").date, "2026-10-13");
+  const leave = {
+    user_id: 1,
+    start: "2026-10-13",
+    end: "2026-10-13",
+    kind: "illness",
+    portion: "full",
+    status: "approved",
+  };
+  assert.equal(
+    anomalies(user, [], [leave], contracts, [], "2026-10-14").length,
+    1,
+  );
+  assert.equal(
+    anomalies(
+      user,
+      [],
+      [],
+      contracts,
+      [{ user_id: 1, month: "2026-10" }],
+      "2026-10-14",
+    ).length,
+    0,
+  );
+});
+test("Les demi-journées ne créent pas de minute supplémentaire avec un objectif impair", () => {
+  const c = [{ ...contracts[0], schedule: [451, 0, 0, 0, 0, 0, 0] }];
+  const leaves = ["morning", "afternoon"].map((portion) => ({
+    user_id: 1,
+    start: "2026-10-12",
+    end: "2026-10-12",
+    kind: "illness",
+    portion,
+    status: "approved",
+  }));
+  const result = monthSummary(user, [], leaves, c, [], "2026-10", "2026-10-12");
+  assert.equal(result.absence_credit, 451);
+  assert.equal(result.delta_minutes, 0);
+});
